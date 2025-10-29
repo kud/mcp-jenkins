@@ -30,11 +30,11 @@
 - **🛠️ 25+ Tools** - Complete Jenkins API coverage
 - **⚡ Modern Stack** - TypeScript 5.3+, ES2023, Native Fetch API
 - **📦 MCP Protocol** - Native integration with Claude Desktop, Claude Code CLI
-- **🔄 Real-time** - Build status, queue management, pipeline stages
+- **🔄 Real-time Monitoring** - Build status, queue management, pipeline stages
 - **🧪 Test Results** - View test pass/fail counts and suites
 - **🎯 Job Control** - Enable/disable, trigger, stop, replay builds
-- **📊 System Monitoring** - Nodes, plugins, version info
-- **🔍 Debug Tools** - MCP inspector for interactive testing
+- **📊 System Info** - Nodes, plugins, version info
+- **🔍 Debug Tools** - MCP inspector for testing
 
 ---
 
@@ -58,7 +58,7 @@ npm install
 npm run build
 ```
 
-### Configure with Claude Code CLI (Recommended)
+### Quick Setup Example (Claude CLI)
 
 ```bash
 claude mcp add --transport stdio --scope user jenkins \
@@ -68,7 +68,7 @@ claude mcp add --transport stdio --scope user jenkins \
   -- node ~/path/to/mcp-jenkins/dist/index.js
 ```
 
-✅ Done! Now you can use Jenkins commands in Claude.
+✅ Done! Now you can use Jenkins commands in your AI assistant.
 
 ---
 
@@ -127,11 +127,11 @@ Verify: `claude mcp list` should show `jenkins`
 <details>
 <summary><b>Click to expand Claude Web setup</b></summary>
 
-**⚠️ Not supported.** Claude.ai doesn't support custom MCP servers yet.
+**⚠️ Not supported.** Claude.ai web interface doesn't support custom MCP servers yet.
 
 **Alternatives:**
-- Use Claude Desktop (see below)
-- Use Claude CLI (see above)
+- Use desktop clients (see below)
+- Use CLI tools (see above)
 - Test via MCP Inspector: `npm run inspect:dev` → `http://localhost:5173`
 
 </details>
@@ -310,8 +310,8 @@ Or edit `~/.windsurf/mcp_settings.json` directly. Restart Windsurf after configu
 **⚠️ Not supported.** GitHub Copilot doesn't support MCP servers.
 
 **Options:**
-- **In VSCode:** Install Copilot + Cline/Claude Dev. Use Copilot for coding, Cline for Jenkins (see VSCode section)
-- **In terminal:** Use Copilot for coding suggestions, Claude CLI for Jenkins (see Claude CLI section)
+- **In VSCode:** Install Copilot + Cline/Claude Dev. Use Copilot for coding, Cline/Claude Dev for Jenkins (see VSCode section)
+- **In terminal:** Use Copilot for coding suggestions, an MCP-compatible CLI for Jenkins (see CLI sections above)
 - **No MCP:** Use code in `src/lib/jenkins-client.ts` as examples for direct API calls
 
 </details>
@@ -409,11 +409,11 @@ Settings (Cmd+, / Ctrl+,) → **Tools** → **AI Assistant** → **Model Context
 
 Apply and restart the IDE.
 
-**Alternative:** If MCP not available, use Claude CLI from built-in terminal (Alt+F12 / ⌥F12)
+**Alternative:** If MCP not available, use MCP-compatible CLI from built-in terminal (Alt+F12 / ⌥F12)
 
 **Notes:**
 - Ultimate/Professional editions: Full AI Assistant MCP support
-- Community editions: Use Claude CLI from terminal instead
+- Community editions: Use MCP-compatible CLI from terminal instead
 
 </details>
 
@@ -481,28 +481,28 @@ Once configured, interact with Jenkins naturally:
 
 ```
 You: "List all my Jenkins jobs"
-Claude: *Shows list of all jobs*
+AI: *Shows list of all jobs*
 
 You: "What's the status of the 'api-backend' build?"
-Claude: *Shows latest build status, duration, result*
+AI: *Shows latest build status, duration, result*
 
 You: "Get the test results for build #42 of 'mobile-pipeline'"
-Claude: *Shows pass/fail counts, test suites*
+AI: *Shows pass/fail counts, test suites*
 
 You: "Show me the pipeline stages for that failed build"
-Claude: *Shows which stage failed and durations*
+AI: *Shows which stage failed and durations*
 
 You: "Trigger a build for 'deploy-staging' with VERSION=2.1.0"
-Claude: *Triggers build with parameters*
+AI: *Triggers build with parameters*
 
 You: "Stop build #966 of 'mobile-pipeline'"
-Claude: *Stops the running build*
+AI: *Stops the running build*
 
 You: "Show me the queue"
-Claude: *Lists all pending builds*
+AI: *Lists all pending builds*
 
 You: "What version of Jenkins are we running?"
-Claude: *Shows Jenkins version*
+AI: *Shows Jenkins version*
 ```
 
 ---
@@ -617,7 +617,7 @@ Follow these steps to create an API token for the MCP server:
 #### Step 2: Create API Token
 1. Scroll to the **API Token** section
 2. Under "Current token(s)", click the **Add new token** button
-3. Enter a descriptive name (e.g., "Jenkins MCP" or "Claude AI")
+3. Enter a descriptive name (e.g., "Jenkins MCP" or "AI Assistant")
 4. Click **Generate**
 5. **⚠️ IMPORTANT:** Copy the token immediately - it will only be shown once!
 
@@ -729,7 +729,6 @@ MIT License - see [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Built with [Model Context Protocol](https://modelcontextprotocol.io/)
-- Powered by [Anthropic Claude](https://anthropic.com/claude)
 - Jenkins REST API by [Jenkins Project](https://www.jenkins.io/)
 
 ---
@@ -743,7 +742,7 @@ MIT License - see [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Made with ❤️ for the Jenkins & AI community**
+**Made with ❤️ for the DevOps & AI community**
 
 ⭐ Star this repo if it helped you!
 
