@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build output
+dist/
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
+
+# Environment variables
+.env
+.env.*
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+
+# MCP config files (if copied locally for testing)
+claude_desktop_config.json
+*_config.local.json
+
+# Credentials and certificates
+*.pem
+*.key
+*.crt
+*.p12
+credentials.json
+secrets.json
+
+# Local test scripts with potential credentials
+test.*.local.*
+*-test-local.*

@@ -1,0 +1,43 @@
+{
+  "name": "jenkins",
+  "description": "Jenkins MCP server for managing jobs, builds, and artifacts",
+  "version": "0.1.0",
+  "tools": [
+    {
+      "name": "jenkins_list_jobs",
+      "description": "List all Jenkins jobs with their names and URLs"
+    },
+    {
+      "name": "jenkins_search_jobs",
+      "description": "Search for Jenkins jobs by name (case-insensitive substring match)"
+    },
+    {
+      "name": "jenkins_get_job_status",
+      "description": "Get the status of the last build for a specific job"
+    },
+    {
+      "name": "jenkins_get_build_status",
+      "description": "Get detailed status of a specific build number for a job"
+    },
+    {
+      "name": "jenkins_get_recent_builds",
+      "description": "Get recent builds for a job with their status and metadata"
+    },
+    {
+      "name": "jenkins_get_console_log",
+      "description": "Get console log output from a build"
+    },
+    {
+      "name": "jenkins_trigger_build",
+      "description": "Trigger a new build for a job, optionally with parameters"
+    },
+    {
+      "name": "jenkins_list_artifacts",
+      "description": "List all artifacts produced by a specific build"
+    },
+    {
+      "name": "jenkins_get_artifact",
+      "description": "Download a specific artifact from a build (returns base64-encoded content)"
+    }
+  ]
+}
