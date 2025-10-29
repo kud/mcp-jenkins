@@ -16,7 +16,7 @@
 [![MCP](https://img.shields.io/badge/MCP-1.0-purple?logo=anthropic)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**🚀 The most comprehensive Jenkins MCP server with 25+ tools**
+**A Jenkins MCP server with 25+ tools for managing jobs, builds, and CI/CD workflows**
 
 [Features](#-features) • [Quick Start](#-quick-start) • [Installation](#-installation-guides) • [Tools](#-available-tools) • [Development](#-development)
 
@@ -74,7 +74,23 @@ claude mcp add --transport stdio --scope user jenkins \
 
 ## 📚 Installation Guides
 
+Choose your development environment:
+
+- [Claude Code CLI](#-claude-code-cli) - Command line interface
+- [Claude Code Web](#-claude-code-web) - Browser-based Claude
+- [Claude Desktop](#%EF%B8%8F-claude-desktop) - Desktop application
+- [VSCode](#-vscode) - With Cline, Claude Dev, Continue
+- [Cursor](#-cursor) - AI-first IDE
+- [Windsurf](#-windsurf) - AI-powered code editor
+- [GitHub Copilot](#-github-copilot) - In VSCode or standalone
+- [GitHub Copilot CLI](#-github-copilot-cli) - Terminal tool
+- [JetBrains IDEs](#-all-jetbrains-ides) - IntelliJ, WebStorm, PyCharm, GoLand, etc.
+
+---
+
 ### 🎯 Claude Code CLI
+
+**For:** Claude AI via command line interface
 
 <details>
 <summary><b>Click to expand Claude Code CLI setup</b></summary>
@@ -134,19 +150,48 @@ Then ask: "List all Jenkins jobs"
 
 ---
 
+### 🌐 Claude Code Web
+
+**For:** Claude.ai in your browser
+
+<details>
+<summary><b>Click to expand Claude Web setup</b></summary>
+
+**⚠️ Note:** Claude Code Web (claude.ai) doesn't support custom MCP servers yet. MCP servers currently only work with:
+- Claude Desktop app
+- Claude Code CLI
+- IDEs with MCP-compatible extensions (VSCode, Cursor, etc.)
+
+**Workaround Options:**
+
+#### Option 1: Use Claude Desktop Instead
+Switch to Claude Desktop app which has full MCP support (see section below)
+
+#### Option 2: Use Claude CLI for Jenkins, Web for Chat
+1. Configure Claude CLI with Jenkins MCP (see Claude Code CLI section)
+2. Use `claude` command for Jenkins operations
+3. Copy/paste responses into Claude Web for further discussion
+
+#### Option 3: Use MCP Inspector for Testing
+```bash
+npm run inspect:dev
+```
+This opens a web UI at `http://localhost:5173` where you can test all Jenkins tools interactively
+
+</details>
+
+---
+
 ### 🖥️ Claude Desktop
+
+**For:** Claude AI desktop application
 
 <details>
 <summary><b>Click to expand Claude Desktop setup</b></summary>
 
 #### 1. Get Your Jenkins API Token
 
-1. Log in to your Jenkins instance
-2. Click your username (top-right)
-3. Click "Configure"
-4. Under "API Token", click "Add new Token"
-5. Give it a name and click "Generate"
-6. **Copy the token** (you won't see it again!)
+See the [Authentication section](#-authentication) below for detailed step-by-step instructions with screenshots on how to create your Jenkins API token.
 
 #### 2. Open Configuration File
 
@@ -207,27 +252,31 @@ Ask Claude: "List all Jenkins jobs"
 
 ---
 
-### 📝 VSCode with Claude Dev
+### 📝 VSCode
+
+**For:** VSCode with MCP-compatible extensions (Cline, Claude Dev, etc.)
 
 <details>
 <summary><b>Click to expand VSCode setup</b></summary>
 
-#### 1. Install Claude Dev Extension
+#### 1. Install an MCP-Compatible Extension
 
-1. Open VSCode
-2. Go to Extensions (Cmd+Shift+X / Ctrl+Shift+X)
-3. Search for "Claude Dev"
-4. Click Install
+Choose one:
+- **Cline** (recommended) - Search for "Cline" in VSCode extensions
+- **Claude Dev** - Search for "Claude Dev" in VSCode extensions
+- **Continue** - Search for "Continue" in VSCode extensions
 
 #### 2. Configure MCP Server
 
-1. Open Command Palette (Cmd+Shift+P / Ctrl+Shift+P)
-2. Type: "Claude Dev: Open MCP Settings"
-3. Add this configuration:
+**For Cline:**
+1. Open Settings (Cmd+, / Ctrl+,)
+2. Search for "Cline: MCP Settings"
+3. Click "Edit in settings.json"
+4. Add:
 
 ```json
 {
-  "mcpServers": {
+  "cline.mcpServers": {
     "jenkins": {
       "command": "node",
       "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
@@ -241,71 +290,27 @@ Ask Claude: "List all Jenkins jobs"
 }
 ```
 
+**For Claude Dev or Continue:**
+1. Open Command Palette (Cmd+Shift+P / Ctrl+Shift+P)
+2. Type: "MCP: Edit Config" or "Open MCP Settings"
+3. Add similar configuration
+
 #### 3. Reload VSCode
 
 Press Cmd+Shift+P / Ctrl+Shift+P → "Reload Window"
 
 #### 4. Test
 
-Open Claude Dev panel and ask: "List all Jenkins jobs"
+Open your AI assistant panel and ask: "List all Jenkins jobs"
 
 </details>
 
 ---
 
-### 🔧 WebStorm / IntelliJ IDEA
-
-<details>
-<summary><b>Click to expand WebStorm/IntelliJ setup</b></summary>
-
-#### 1. Install AI Assistant Plugin
-
-1. Go to Settings → Plugins
-2. Search for "AI Assistant" or "Claude"
-3. Install and restart
-
-#### 2. Configure External Tools
-
-1. Go to Settings → Tools → External Tools
-2. Click "+" to add new tool
-3. Configure:
-   - **Name:** Jenkins MCP
-   - **Program:** `node`
-   - **Arguments:** `$ProjectFileDir$/mcp-jenkins/dist/index.js`
-   - **Working directory:** `$ProjectFileDir$`
-
-#### 3. Set Environment Variables
-
-In your run configuration or `.env` file:
-
-```bash
-JENKINS_URL=https://pipeline.yourcompany.com
-JENKINS_USER=your_username
-JENKINS_API_TOKEN=your_api_token
-```
-
-#### 4. Alternative: Terminal Integration
-
-Add to your shell profile (~/.zshrc or ~/.bashrc):
-
-```bash
-export JENKINS_URL="https://pipeline.yourcompany.com"
-export JENKINS_USER="your_username"
-export JENKINS_API_TOKEN="your_api_token"
-
-alias jenkins-mcp="node /path/to/mcp-jenkins/dist/index.js"
-```
-
-Then use Claude CLI from WebStorm terminal:
-```bash
-claude
-```
-
-</details>
-
----
 
 ### 🌐 Cursor
+
+**For:** Cursor IDE with built-in AI
 
 <details>
 <summary><b>Click to expand Cursor setup</b></summary>
@@ -314,11 +319,12 @@ claude
 
 Download from [cursor.sh](https://cursor.sh)
 
-#### 2. Configure MCP
+#### 2. Configure MCP Server
 
-Open Cursor settings (Cmd+, / Ctrl+,) → Search for "MCP"
-
-Add configuration:
+1. Open Cursor Settings (Cmd+, / Ctrl+,)
+2. Search for "MCP" or go to **Features** → **Model Context Protocol**
+3. Click **Edit Config** or open `~/.cursor/mcp_config.json`
+4. Add configuration:
 
 ```json
 {
@@ -338,51 +344,225 @@ Add configuration:
 
 #### 3. Restart Cursor
 
+Completely quit (Cmd+Q / Alt+F4) and reopen Cursor
+
 #### 4. Test
 
-Open Cursor AI and ask: "List all Jenkins jobs"
+Open Cursor AI chat (Cmd+L / Ctrl+L) and ask: "List all Jenkins jobs"
 
 </details>
 
 ---
 
-### 🎨 Codex / GitHub Copilot
+### 🌊 Windsurf
+
+**For:** Windsurf AI-powered code editor
 
 <details>
-<summary><b>Click to expand Codex/Copilot setup</b></summary>
+<summary><b>Click to expand Windsurf setup</b></summary>
 
-**Note:** Codex and GitHub Copilot don't natively support MCP protocol. You'll need to use this as a standalone tool via Claude CLI.
+#### 1. Install Windsurf
 
-#### Option 1: Via Claude CLI
+Download from [codeium.com/windsurf](https://codeium.com/windsurf)
 
+#### 2. Configure MCP Server
+
+1. Open Windsurf Settings
+2. Navigate to **AI Settings** → **Model Context Protocol**
+3. Click **Add Server**
+4. Configure:
+
+```json
+{
+  "mcpServers": {
+    "jenkins": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
+      "env": {
+        "JENKINS_URL": "https://pipeline.yourcompany.com",
+        "JENKINS_USER": "your_username",
+        "JENKINS_API_TOKEN": "your_api_token"
+      }
+    }
+  }
+}
+```
+
+Or edit `~/.windsurf/mcp_settings.json` directly
+
+#### 3. Restart Windsurf
+
+Completely quit and reopen Windsurf
+
+#### 4. Test
+
+Open Windsurf AI chat and ask: "List all Jenkins jobs"
+
+</details>
+
+---
+
+### 🤖 GitHub Copilot
+
+**For:** GitHub Copilot in VSCode or other editors
+
+<details>
+<summary><b>Click to expand GitHub Copilot setup</b></summary>
+
+**⚠️ Note:** GitHub Copilot doesn't directly support MCP servers. Here are your options:
+
+#### Option 1: Use VSCode with Copilot + Claude Code Extension
+
+1. Install both **GitHub Copilot** and **Claude Dev** (or **Cline**) in VSCode
+2. Configure MCP server for Claude Dev (see VSCode section above)
+3. Use:
+   - **Copilot** for code completion (Ctrl+I / Cmd+I)
+   - **Claude/Cline** for Jenkins operations (via MCP)
+
+#### Option 2: Use Claude CLI in Terminal Alongside Copilot
+
+1. Install Claude CLI:
 ```bash
-# Install Claude CLI
 npm install -g @anthropic-ai/claude-code
+```
 
-# Configure Jenkins MCP
+2. Configure Jenkins MCP:
+```bash
 claude mcp add --transport stdio --scope user jenkins \
   --env JENKINS_URL=https://pipeline.yourcompany.com \
   --env JENKINS_USER=your_username \
   --env JENKINS_API_TOKEN=your_api_token \
   -- node ~/path/to/mcp-jenkins/dist/index.js
-
-# Use in terminal
-claude
 ```
 
-Then ask Jenkins questions!
+3. Use:
+   - **Copilot** in your editor for coding
+   - **Claude CLI** in terminal for Jenkins: `claude` then ask "List all Jenkins jobs"
 
-#### Option 2: HTTP Wrapper (Advanced)
+#### Option 3: Copilot Chat + Manual REST Calls (No MCP)
 
-If you need HTTP access for integration:
+Use this MCP server as a reference and make direct Jenkins API calls via Copilot Chat:
+- Ask Copilot Chat: "How do I call the Jenkins API to list all jobs?"
+- Use the client code in `src/lib/jenkins-client.ts` as examples
 
-1. Run the MCP inspector:
+</details>
+
+---
+
+### 💻 GitHub Copilot CLI
+
+**For:** GitHub Copilot in your terminal
+
+<details>
+<summary><b>Click to expand GitHub Copilot CLI setup</b></summary>
+
+**⚠️ Note:** GitHub Copilot CLI (`gh copilot`) doesn't support MCP servers.
+
+**Recommended Approach: Use Both Tools**
+
+1. **Install GitHub Copilot CLI:**
 ```bash
-npm run inspect
+gh extension install github/gh-copilot
 ```
 
-2. This starts a web UI at `http://localhost:5173`
-3. You can then build a simple HTTP wrapper around it
+2. **Install Claude CLI with Jenkins MCP:**
+```bash
+# Install Claude CLI
+npm install -g @anthropic-ai/claude-code
+
+# Add Jenkins MCP
+claude mcp add --transport stdio --scope user jenkins \
+  --env JENKINS_URL=https://pipeline.yourcompany.com \
+  --env JENKINS_USER=your_username \
+  --env JENKINS_API_TOKEN=your_api_token \
+  -- node ~/path/to/mcp-jenkins/dist/index.js
+```
+
+3. **Use them together:**
+```bash
+# For general coding questions
+gh copilot suggest "create a bash script that..."
+
+# For Jenkins operations
+claude
+# Then ask: "List all Jenkins jobs"
+# or: "Check status of mobile-pipeline"
+```
+
+4. **Create a helper alias (optional):**
+
+Add to `~/.zshrc` or `~/.bashrc`:
+```bash
+alias jenkins="claude --prompt 'You are a Jenkins assistant. Help me with:'"
+```
+
+Then use:
+```bash
+jenkins "What's the status of my builds?"
+```
+
+</details>
+
+---
+
+### 🔧 All JetBrains IDEs
+
+**For:** IntelliJ IDEA, WebStorm, PyCharm, GoLand, RubyMine, PhpStorm, Rider, CLion, DataGrip
+
+<details>
+<summary><b>Click to expand JetBrains IDEs setup</b></summary>
+
+All JetBrains IDEs share the same AI Assistant configuration:
+
+#### 1. Install AI Assistant
+
+1. Open **Settings/Preferences** (Cmd+, / Ctrl+,)
+2. Go to **Plugins**
+3. Search for **"AI Assistant"**
+4. Install and restart IDE
+
+#### 2. Configure MCP Server
+
+1. Open **Settings** (Cmd+, / Ctrl+,)
+2. Go to **Tools** → **AI Assistant** → **Model Context Protocol**
+3. Click **Add Server** or the **+** button
+4. Configure:
+   - **Name:** Jenkins
+   - **Command:** `node`
+   - **Arguments:** `/absolute/path/to/mcp-jenkins/dist/index.js`
+   - **Environment Variables:**
+     ```
+     JENKINS_URL=https://pipeline.yourcompany.com
+     JENKINS_USER=your_username
+     JENKINS_API_TOKEN=your_api_token
+     ```
+
+#### 3. Save and Restart
+
+Click **Apply** → **OK** and restart the IDE
+
+#### 4. Test
+
+1. Open AI Assistant panel (typically in sidebar or via View → Tool Windows → AI Assistant)
+2. Ask: "List all Jenkins jobs"
+
+#### Alternative: Use Claude CLI from Built-in Terminal
+
+If your JetBrains IDE version doesn't support MCP yet:
+
+1. Configure Claude CLI (see [Claude Code CLI section](#-claude-code-cli))
+2. Open Terminal in your IDE (Alt+F12 / ⌥F12)
+3. Run: `claude`
+4. Ask Jenkins questions
+
+#### IDE-Specific Notes:
+
+- **IntelliJ IDEA Ultimate**: Full AI Assistant support
+- **IntelliJ IDEA Community**: Limited AI features, use Claude CLI from terminal
+- **WebStorm**: Full AI Assistant support
+- **PyCharm Professional**: Full AI Assistant support
+- **PyCharm Community**: Limited AI features, use Claude CLI from terminal
+- **Other JetBrains IDEs**: Most professional editions support AI Assistant
 
 </details>
 
@@ -575,14 +755,29 @@ npm run build
 
 ### Get Your Jenkins API Token
 
-1. Log in to Jenkins
-2. Click your **username** (top-right)
-3. Click **Configure**
-4. Scroll to **API Token** section
-5. Click **Add new Token**
-6. Name it (e.g., "Claude MCP")
-7. Click **Generate**
-8. **Copy immediately** (won't be shown again!)
+Follow these steps to create an API token for the MCP server:
+
+#### Step 1: Access Security Settings
+1. Log in to your Jenkins instance
+2. Click your **username** in the top-right corner
+3. Select **Configure** from the dropdown menu
+4. In the left sidebar, click **Security**
+
+#### Step 2: Create API Token
+1. Scroll to the **API Token** section
+2. Under "Current token(s)", click the **Add new token** button
+3. Enter a descriptive name (e.g., "Jenkins MCP" or "Claude AI")
+4. Click **Generate**
+5. **⚠️ IMPORTANT:** Copy the token immediately - it will only be shown once!
+
+#### Step 3: Save the Token
+Store the token securely - you'll need it for configuration:
+- For Bearer Token auth: Use it as `JENKINS_BEARER_TOKEN`
+- For Basic auth: Use it as `JENKINS_API_TOKEN` (along with `JENKINS_USER`)
+
+**Example token format:** `11abcd1234567890abcdef1234567890ab`
+
+> 💡 **Tip:** You can see all your active tokens in the "Current token(s)" list. Each shows when it was created and last used, helping you manage and rotate tokens regularly.
 
 ### Bearer Token vs Basic Auth
 
