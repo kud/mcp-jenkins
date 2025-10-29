@@ -43,23 +43,38 @@
 ### Prerequisites
 
 - Node.js 20+
-- Jenkins API token ([how to get one](#get-your-jenkins-api-token))
+- Jenkins API token ([how to get one](#-authentication))
 
 ### Installation
 
+**Option 1: Via npm (recommended once published):**
+
 ```bash
-# Clone or download this repository
+# No installation needed! Just use npx in your MCP config
+npx @kud/mcp-jenkins
+```
+
+**Option 2: Local installation:**
+
+```bash
+git clone https://github.com/yourusername/mcp-jenkins.git
 cd mcp-jenkins
-
-# Install dependencies
 npm install
-
-# Build
 npm run build
 ```
 
 ### Quick Setup Example (Claude CLI)
 
+**If installed via npm:**
+```bash
+claude mcp add --transport stdio --scope user jenkins \
+  --env JENKINS_URL=https://your-jenkins.com \
+  --env JENKINS_USER=your_username \
+  --env JENKINS_API_TOKEN=your_token \
+  -- npx @kud/mcp-jenkins
+```
+
+**If installed locally:**
 ```bash
 claude mcp add --transport stdio --scope user jenkins \
   --env JENKINS_URL=https://your-jenkins.com \
@@ -97,15 +112,16 @@ Choose your development environment:
 
 Add the Jenkins MCP server to Claude CLI:
 
-**Bearer Token:**
+**Via npm (recommended):**
 ```bash
 claude mcp add --transport stdio --scope user jenkins \
   --env JENKINS_URL=https://pipeline.yourcompany.com \
-  --env JENKINS_BEARER_TOKEN=your_bearer_token \
-  -- node $HOME/path/to/mcp-jenkins/dist/index.js
+  --env JENKINS_USER=your_username \
+  --env JENKINS_API_TOKEN=your_api_token \
+  -- npx @kud/mcp-jenkins
 ```
 
-**Basic Auth:**
+**Local installation:**
 ```bash
 claude mcp add --transport stdio --scope user jenkins \
   --env JENKINS_URL=https://pipeline.yourcompany.com \
@@ -159,23 +175,24 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
 
 #### 2. Add Configuration
 
-**Bearer Token:**
+**Via npm (recommended):**
 ```json
 {
   "mcpServers": {
     "jenkins": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
+      "command": "npx",
+      "args": ["@kud/mcp-jenkins"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
-        "JENKINS_BEARER_TOKEN": "your_jenkins_api_token"
+        "JENKINS_USER": "your_username",
+        "JENKINS_API_TOKEN": "your_api_token"
       }
     }
   }
 }
 ```
 
-**Basic Auth:**
+**Local installation:**
 ```json
 {
   "mcpServers": {
@@ -215,8 +232,8 @@ Settings (Cmd+, / Ctrl+,) → Search "Cline: MCP Settings" → Edit in settings.
 {
   "cline.mcpServers": {
     "jenkins": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
+      "command": "npx",
+      "args": ["@kud/mcp-jenkins"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -226,6 +243,8 @@ Settings (Cmd+, / Ctrl+,) → Search "Cline: MCP Settings" → Edit in settings.
   }
 }
 ```
+
+Or for local installation, use `"command": "node"` and `"args": ["/absolute/path/to/mcp-jenkins/dist/index.js"]`
 
 **Claude Dev / Continue:**
 
@@ -251,8 +270,8 @@ Settings (Cmd+, / Ctrl+,) → Search "MCP" → Edit Config or open `~/.cursor/mc
 {
   "mcpServers": {
     "jenkins": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
+      "command": "npx",
+      "args": ["@kud/mcp-jenkins"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -262,6 +281,8 @@ Settings (Cmd+, / Ctrl+,) → Search "MCP" → Edit Config or open `~/.cursor/mc
   }
 }
 ```
+
+Or for local installation, use `"command": "node"` and `"args": ["/absolute/path/to/mcp-jenkins/dist/index.js"]`
 
 Restart Cursor (Cmd+Q / Alt+F4) after configuration
 
@@ -282,8 +303,8 @@ Settings → **AI Settings** → **Model Context Protocol** → Add Server:
 {
   "mcpServers": {
     "jenkins": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
+      "command": "npx",
+      "args": ["@kud/mcp-jenkins"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -294,7 +315,9 @@ Settings → **AI Settings** → **Model Context Protocol** → Add Server:
 }
 ```
 
-Or edit `~/.windsurf/mcp_settings.json` directly. Restart Windsurf after configuration.
+Or edit `~/.windsurf/mcp_settings.json` directly. For local installation, use `"command": "node"` with full path.
+
+Restart Windsurf after configuration.
 
 </details>
 
@@ -335,8 +358,8 @@ Create or edit `~/.copilot/mcp-config.json`:
 {
   "mcpServers": {
     "jenkins": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
+      "command": "npx",
+      "args": ["@kud/mcp-jenkins"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -357,8 +380,8 @@ Pass MCP config directly via command line:
 copilot --additional-mcp-config '{
   "mcpServers": {
     "jenkins": {
-      "command": "node",
-      "args": ["/absolute/path/to/mcp-jenkins/dist/index.js"],
+      "command": "npx",
+      "args": ["@kud/mcp-jenkins"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -375,6 +398,8 @@ Or save to a file and reference it:
 # Save config to jenkins-mcp.json
 copilot --additional-mcp-config @jenkins-mcp.json
 ```
+
+For local installation, use `"command": "node"` with `"args": ["/absolute/path/to/mcp-jenkins/dist/index.js"]`
 
 #### Option 3: Allow All Tools (Non-Interactive)
 
@@ -398,14 +423,16 @@ copilot --allow-all-tools -p "Check status of mobile-pipeline build"
 Settings (Cmd+, / Ctrl+,) → **Tools** → **AI Assistant** → **Model Context Protocol** → Add Server:
 
 - **Name:** Jenkins
-- **Command:** `node`
-- **Arguments:** `/absolute/path/to/mcp-jenkins/dist/index.js`
+- **Command:** `npx`
+- **Arguments:** `@kud/mcp-jenkins`
 - **Environment Variables:**
   ```
   JENKINS_URL=https://pipeline.yourcompany.com
   JENKINS_USER=your_username
   JENKINS_API_TOKEN=your_api_token
   ```
+
+For local installation, use **Command:** `node` and **Arguments:** `/absolute/path/to/mcp-jenkins/dist/index.js`
 
 Apply and restart the IDE.
 
