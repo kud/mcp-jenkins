@@ -1,6 +1,6 @@
 {
   "name": "@kud/mcp-jenkins",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Jenkins MCP server with bearer token authentication support",
   "type": "module",
   "main": "dist/index.js",
