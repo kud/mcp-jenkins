@@ -51,7 +51,7 @@
 
 ```bash
 # No installation needed! Just use npx in your MCP config
-npx @kud/mcp-jenkins
+npx --yes @kud/mcp-jenkins@latest
 ```
 
 **Option 2: Local installation:**
@@ -71,7 +71,7 @@ claude mcp add --transport stdio --scope user jenkins \
   --env JENKINS_URL=https://your-jenkins.com \
   --env JENKINS_USER=your_username \
   --env JENKINS_API_TOKEN=your_token \
-  -- npx @kud/mcp-jenkins
+  -- npx --yes @kud/mcp-jenkins@latest
 ```
 
 **If installed locally:**
@@ -118,7 +118,7 @@ claude mcp add --transport stdio --scope user jenkins \
   --env JENKINS_URL=https://pipeline.yourcompany.com \
   --env JENKINS_USER=your_username \
   --env JENKINS_API_TOKEN=your_api_token \
-  -- npx @kud/mcp-jenkins
+  -- npx --yes @kud/mcp-jenkins@latest
 ```
 
 **Local installation:**
@@ -181,7 +181,7 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
   "mcpServers": {
     "jenkins": {
       "command": "npx",
-      "args": ["@kud/mcp-jenkins"],
+      "args": ["--yes", "@kud/mcp-jenkins@latest"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -271,7 +271,7 @@ Settings (Cmd+, / Ctrl+,) → Search "MCP" → Edit Config or open `~/.cursor/mc
   "mcpServers": {
     "jenkins": {
       "command": "npx",
-      "args": ["@kud/mcp-jenkins"],
+      "args": ["--yes", "@kud/mcp-jenkins@latest"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -304,7 +304,7 @@ Settings → **AI Settings** → **Model Context Protocol** → Add Server:
   "mcpServers": {
     "jenkins": {
       "command": "npx",
-      "args": ["@kud/mcp-jenkins"],
+      "args": ["--yes", "@kud/mcp-jenkins@latest"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -359,7 +359,7 @@ Create or edit `~/.copilot/mcp-config.json`:
   "mcpServers": {
     "jenkins": {
       "command": "npx",
-      "args": ["@kud/mcp-jenkins"],
+      "args": ["--yes", "@kud/mcp-jenkins@latest"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -381,7 +381,7 @@ copilot --additional-mcp-config '{
   "mcpServers": {
     "jenkins": {
       "command": "npx",
-      "args": ["@kud/mcp-jenkins"],
+      "args": ["--yes", "@kud/mcp-jenkins@latest"],
       "env": {
         "JENKINS_URL": "https://pipeline.yourcompany.com",
         "JENKINS_USER": "your_username",
@@ -424,7 +424,7 @@ Settings (Cmd+, / Ctrl+,) → **Tools** → **AI Assistant** → **Model Context
 
 - **Name:** Jenkins
 - **Command:** `npx`
-- **Arguments:** `@kud/mcp-jenkins`
+- **Arguments:** `--yes @kud/mcp-jenkins@latest`
 - **Environment Variables:**
   ```
   JENKINS_URL=https://pipeline.yourcompany.com
