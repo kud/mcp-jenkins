@@ -7,6 +7,14 @@ import {
   loadJenkinsEnv,
 } from "../common/index.js"
 
+/**
+ * Converts a job name (possibly folder-nested, e.g. "Folder/Job") into the
+ * path segments required by the Jenkins REST API: "Folder/job/Job".
+ * A plain job name like "MyJob" is returned as-is (just URI-encoded).
+ */
+const jobPath = (name: string): string =>
+  name.split("/").map(encodeURIComponent).join("/job/")
+
 export interface NormalizedBuild {
   id: string
   result: "SUCCESS" | "FAILURE" | "ABORTED" | "RUNNING" | string
@@ -81,7 +89,7 @@ export class JenkinsClient {
   ): Promise<NormalizedBuild[]> {
     try {
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/api/json?depth=1`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?depth=1`,
         { headers: this.headers() },
       )
       if (!raw.builds) return []
@@ -112,7 +120,7 @@ export class JenkinsClient {
   async getLastBuild(jobName: string): Promise<NormalizedBuild> {
     try {
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/lastBuild/api/json`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/lastBuild/api/json`,
         { headers: this.headers() },
       )
       return this.normalizeBuild(raw)
@@ -128,7 +136,7 @@ export class JenkinsClient {
   ): Promise<NormalizedBuild> {
     try {
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/api/json`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json`,
         { headers: this.headers() },
       )
       return this.normalizeBuild(raw)
@@ -154,7 +162,7 @@ export class JenkinsClient {
     }
     try {
       const fullLog = await httpGetText(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${bn}/consoleText`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${bn}/consoleText`,
         { headers: this.headers() },
       )
       const snippet = fullLog
@@ -191,7 +199,7 @@ export class JenkinsClient {
     const crumb = await this.ensureCrumb()
     const isParameterized = params && Object.keys(params).length > 0
     const path = isParameterized ? "buildWithParameters" : "build"
-    const url = `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${path}`
+    const url = `${this.baseUrl}/job/${jobPath(jobName)}/${path}`
     let body: string | undefined
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
@@ -219,14 +227,14 @@ export class JenkinsClient {
   > {
     try {
       const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/api/json?tree=artifacts[fileName,relativePath]`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=artifacts[fileName,relativePath]`,
         { headers: this.headers() },
       )
       if (!data || !Array.isArray(data.artifacts)) return []
       return data.artifacts.map((a: any) => ({
         fileName: a.fileName,
         relativePath: a.relativePath,
-        url: `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/artifact/${a.relativePath}`,
+        url: `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/artifact/${a.relativePath}`,
       }))
     } catch (e: any) {
       if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
@@ -244,7 +252,7 @@ export class JenkinsClient {
     size: number
     base64: string
   }> {
-    const url = `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/artifact/${relativePath}`
+    const url = `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/artifact/${relativePath}`
     try {
       const data = await httpGetText(url, { headers: this.headers() })
       const buf = Buffer.from(data, "utf8")
@@ -279,7 +287,7 @@ export class JenkinsClient {
 
     try {
       await httpPost(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/stop`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/stop`,
         { headers },
       )
       return { jobName, buildNumber, stopped: true }
@@ -300,7 +308,7 @@ export class JenkinsClient {
 
     try {
       await httpPost(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/doDelete`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/doDelete`,
         { headers },
       )
       return { jobName, buildNumber, deleted: true }
@@ -314,7 +322,7 @@ export class JenkinsClient {
   async getTestResults(jobName: string, buildNumber: number): Promise<any> {
     try {
       const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/testReport/api/json`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/testReport/api/json`,
         { headers: this.headers() },
       )
       return {
@@ -397,7 +405,7 @@ export class JenkinsClient {
 
     try {
       await httpPost(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/enable`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/enable`,
         { headers },
       )
       return { jobName, enabled: true }
@@ -417,7 +425,7 @@ export class JenkinsClient {
 
     try {
       await httpPost(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/disable`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/disable`,
         { headers },
       )
       return { jobName, disabled: true }
@@ -437,7 +445,7 @@ export class JenkinsClient {
 
     try {
       await httpPost(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/doDelete`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/doDelete`,
         { headers },
       )
       return { jobName, deleted: true }
@@ -453,7 +461,7 @@ export class JenkinsClient {
   ): Promise<{ jobName: string; config: string }> {
     try {
       const config = await httpGetText(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/config.xml`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/config.xml`,
         { headers: this.headers() },
       )
       return { jobName, config }
@@ -548,7 +556,7 @@ export class JenkinsClient {
   async getBuildChanges(jobName: string, buildNumber: number): Promise<any> {
     try {
       const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/api/json?tree=changeSet[items[author[fullName],msg,commitId,timestamp]]`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=changeSet[items[author[fullName],msg,commitId,timestamp]]`,
         { headers: this.headers() },
       )
       if (!data.changeSet || !data.changeSet.items) {
@@ -576,7 +584,7 @@ export class JenkinsClient {
   async getPipelineStages(jobName: string, buildNumber: number): Promise<any> {
     try {
       const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/wfapi/describe`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/wfapi/describe`,
         { headers: this.headers() },
       )
       return {
@@ -619,7 +627,7 @@ export class JenkinsClient {
 
     try {
       const res = await httpPost(
-        `${this.baseUrl}/job/${encodeURIComponent(jobName)}/${buildNumber}/replay/rebuild`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/replay/rebuild`,
         { headers },
       )
       return { jobName, buildNumber, queueUrl: res.headers["location"] || null }
