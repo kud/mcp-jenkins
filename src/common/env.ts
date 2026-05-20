@@ -3,6 +3,7 @@ export interface JenkinsEnv {
   JENKINS_USER?: string
   JENKINS_API_TOKEN?: string
   JENKINS_BEARER_TOKEN?: string
+  JENKINS_ANONYMOUS?: boolean
 }
 
 export interface CliArgs {
@@ -10,6 +11,7 @@ export interface CliArgs {
   jenkinsUser?: string
   jenkinsApiToken?: string
   jenkinsBearerToken?: string
+  jenkinsAnonymous?: boolean
 }
 
 // Store resolved configs globally to avoid re-parsing
@@ -36,11 +38,12 @@ const buildInstanceEnv = (
   user: string | undefined,
   apiToken: string | undefined,
   bearerToken: string | undefined,
+  anonymous: boolean,
 ): JenkinsEnv => {
   const hasBasicAuth = user && apiToken
   const hasBearerAuth = bearerToken
 
-  if (!hasBasicAuth && !hasBearerAuth) {
+  if (!hasBasicAuth && !hasBearerAuth && !anonymous) {
     throw new Error(
       `Missing Jenkins authentication for URL ${url}. Provide via:\n` +
         "  Bearer Token:\n" +
@@ -48,7 +51,10 @@ const buildInstanceEnv = (
         "    2. Environment: MCP_JENKINS_BEARER_TOKEN=<token>\n" +
         "  OR Basic Auth:\n" +
         "    1. CLI: --user <user> --api-token <token>\n" +
-        "    2. Environment: MCP_JENKINS_USER=<user> MCP_JENKINS_API_TOKEN=<token>",
+        "    2. Environment: MCP_JENKINS_USER=<user> MCP_JENKINS_API_TOKEN=<token>\n" +
+        "  OR Anonymous (no-auth Jenkins instance):\n" +
+        "    1. CLI: --anonymous\n" +
+        "    2. Environment: MCP_JENKINS_ANONYMOUS=true",
     )
   }
 
@@ -57,6 +63,7 @@ const buildInstanceEnv = (
     JENKINS_USER: user || undefined,
     JENKINS_API_TOKEN: apiToken || undefined,
     JENKINS_BEARER_TOKEN: bearerToken || undefined,
+    JENKINS_ANONYMOUS: anonymous || undefined,
   }
 }
 
@@ -91,6 +98,12 @@ export const loadAllJenkinsInstances = (
     cliArgs?.jenkinsBearerToken,
     "MCP_JENKINS_BEARER_TOKEN",
   )
+  const rawAnonymous = getConfigValue(
+    cliArgs?.jenkinsAnonymous !== undefined
+      ? String(cliArgs.jenkinsAnonymous)
+      : undefined,
+    "MCP_JENKINS_ANONYMOUS",
+  )
   const rawInstances = process.env["MCP_JENKINS_INSTANCES"]
 
   if (!rawUrl) {
@@ -105,6 +118,7 @@ export const loadAllJenkinsInstances = (
   const users = splitValues(rawUser)
   const apiTokens = splitValues(rawApiToken)
   const bearerTokens = splitValues(rawBearerToken)
+  const anonymousFlags = splitValues(rawAnonymous)
   const instanceNames = rawInstances
     ? splitValues(rawInstances)
     : urls.map((url) => new URL(url).hostname.split(".")[0])
@@ -123,7 +137,13 @@ export const loadAllJenkinsInstances = (
     const user = users[i] ?? users[0]
     const apiToken = apiTokens[i] ?? apiTokens[0]
     const bearerToken = bearerTokens[i] ?? bearerTokens[0]
-    instances.set(name, buildInstanceEnv(url, user, apiToken, bearerToken))
+    const anonymous =
+      ((anonymousFlags[i] ?? anonymousFlags[0]) || "false").toLowerCase() ===
+      "true"
+    instances.set(
+      name,
+      buildInstanceEnv(url, user, apiToken, bearerToken, anonymous),
+    )
   }
 
   if (cliArgs) cachedInstances = instances

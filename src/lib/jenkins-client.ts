@@ -31,24 +31,23 @@ interface CrumbInfo {
 
 export class JenkinsClient {
   readonly baseUrl: string
-  private authHeader: string
+  private authHeader: string | undefined
   private crumb?: CrumbInfo
+  private cookies: string | undefined
 
   constructor(credentials?: JenkinsCredentials) {
     if (credentials) {
-      // Use credentials provided by the caller (from request headers)
       this.baseUrl = credentials.baseUrl
       this.authHeader = credentials.authHeader
     } else {
-      // loadJenkinsEnv will use globally set values from CLI args or env vars
       const env = loadJenkinsEnv()
       this.baseUrl = env.JENKINS_URL
 
-      // Support both Bearer token and Basic auth from env
-      if (env.JENKINS_BEARER_TOKEN) {
+      if (env.JENKINS_ANONYMOUS) {
+        this.authHeader = undefined
+      } else if (env.JENKINS_BEARER_TOKEN) {
         this.authHeader = "Bearer " + env.JENKINS_BEARER_TOKEN
       } else {
-        // Fall back to Basic auth with user + API token
         this.authHeader =
           "Basic " +
           Buffer.from(env.JENKINS_USER + ":" + env.JENKINS_API_TOKEN).toString(
@@ -58,8 +57,11 @@ export class JenkinsClient {
     }
   }
 
-  private headers(extra?: Record<string, string>) {
-    return { Authorization: this.authHeader, ...extra }
+  private headers(extra?: Record<string, string>): Record<string, string> {
+    const h: Record<string, string> = {}
+    if (this.authHeader) h["Authorization"] = this.authHeader
+    if (this.cookies) h["Cookie"] = this.cookies
+    return { ...h, ...extra }
   }
 
   // List jobs (shallow) returns name + url
@@ -175,14 +177,32 @@ export class JenkinsClient {
   private async ensureCrumb(): Promise<CrumbInfo | undefined> {
     if (this.crumb) return this.crumb
     try {
-      const crumb = await httpGetJson<CrumbInfo>(
-        `${this.baseUrl}/crumbIssuer/api/json`,
-        { headers: this.headers() },
-      )
+      const controller = new AbortController()
+      const t = setTimeout(() => controller.abort(), 10000)
+      let res: Response
+      try {
+        res = await fetch(`${this.baseUrl}/crumbIssuer/api/json`, {
+          headers: this.headers(),
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(t)
+      }
+      if (!res.ok) {
+        logger.warn("Crumb fetch failed (continuing)", { status: res.status })
+        return undefined
+      }
+      const setCookies: string[] =
+        typeof (res.headers as any).getSetCookie === "function"
+          ? (res.headers as any).getSetCookie()
+          : ([res.headers.get("set-cookie")].filter(Boolean) as string[])
+      if (setCookies.length > 0) {
+        this.cookies = setCookies.map((c) => c.split(";")[0].trim()).join("; ")
+      }
+      const crumb = (await res.json()) as CrumbInfo
       this.crumb = crumb
       return crumb
     } catch (e: any) {
-      // Some Jenkins instances may not have CSRF protection enabled
       logger.warn("Crumb fetch failed (continuing)", { error: String(e) })
       return undefined
     }

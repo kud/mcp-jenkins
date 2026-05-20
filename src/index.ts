@@ -731,6 +731,9 @@ const parseCliArgs = (): CliArgs => {
           i++
         }
         break
+      case "--anonymous":
+        args.jenkinsAnonymous = true
+        break
       case "--help":
       case "-h":
         console.log(`
@@ -747,10 +750,12 @@ Options:
   --user <username>      Jenkins username (for Basic auth)
   --api-token <token>    Jenkins API token (for Basic auth)
   --bearer-token <token> Jenkins bearer token (OAuth/token auth)
+  --anonymous            No-auth Jenkins instance (no credentials required)
   -h, --help             Show this help message
 
 Authentication:
   Either provide --bearer-token OR both --user and --api-token
+  OR use --anonymous for Jenkins instances with no authentication
 
 Tool Filtering (via environment variables):
   MCP_JENKINS_ALLOW_TOOLS=<tool1>,<tool2>  Allowlist — expose only these tools
