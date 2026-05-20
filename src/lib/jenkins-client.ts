@@ -21,7 +21,7 @@ export interface NormalizedBuild {
 
 export interface JenkinsCredentials {
   baseUrl: string
-  authHeader: string
+  authHeader?: string
 }
 
 interface CrumbInfo {

@@ -814,12 +814,14 @@ let defaultInstance: string
 try {
   const instances = loadAllJenkinsInstances(cliArgs)
   for (const [name, env] of instances) {
-    const authHeader = env.JENKINS_BEARER_TOKEN
-      ? "Bearer " + env.JENKINS_BEARER_TOKEN
-      : "Basic " +
-        Buffer.from(`${env.JENKINS_USER}:${env.JENKINS_API_TOKEN}`).toString(
-          "base64",
-        )
+    const authHeader = env.JENKINS_ANONYMOUS
+      ? undefined
+      : env.JENKINS_BEARER_TOKEN
+        ? "Bearer " + env.JENKINS_BEARER_TOKEN
+        : "Basic " +
+          Buffer.from(`${env.JENKINS_USER}:${env.JENKINS_API_TOKEN}`).toString(
+            "base64",
+          )
     clients.set(
       name,
       new JenkinsClient({ baseUrl: env.JENKINS_URL, authHeader }),
@@ -827,7 +829,11 @@ try {
     logger.info("Jenkins client initialized", {
       instance: name,
       url: env.JENKINS_URL,
-      authType: env.JENKINS_BEARER_TOKEN ? "bearer" : "basic",
+      authType: env.JENKINS_ANONYMOUS
+        ? "anonymous"
+        : env.JENKINS_BEARER_TOKEN
+          ? "bearer"
+          : "basic",
     })
   }
   defaultInstance = instances.keys().next().value as string

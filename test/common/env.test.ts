@@ -79,6 +79,7 @@ describe("loadAllJenkinsInstances — 2-tier priority", () => {
     delete process.env["MCP_JENKINS_USER"]
     delete process.env["MCP_JENKINS_API_TOKEN"]
     delete process.env["MCP_JENKINS_BEARER_TOKEN"]
+    delete process.env["MCP_JENKINS_ANONYMOUS"]
     delete process.env["MCP_JENKINS_INSTANCES"]
     delete process.env["JENKINS_URL"]
     delete process.env["JENKINS_USER"]
@@ -199,5 +200,37 @@ describe("loadAllJenkinsInstances — 2-tier priority", () => {
     process.env["MCP_JENKINS_API_TOKEN"] = "token"
 
     expect(() => loadAllJenkinsInstances({})).toThrow("counts must match")
+  })
+
+  it("anonymous single-instance accepts no user or token", () => {
+    process.env["MCP_JENKINS_URL"] = "https://jenkins.example.com"
+    process.env["MCP_JENKINS_ANONYMOUS"] = "true"
+
+    const instances = loadAllJenkinsInstances({})
+    const env = instances.values().next().value
+    expect(env.JENKINS_ANONYMOUS).toBe(true)
+    expect(env.JENKINS_USER).toBeUndefined()
+    expect(env.JENKINS_API_TOKEN).toBeUndefined()
+  })
+
+  it("multi-instance positional anonymous flags apply per-instance", () => {
+    process.env["MCP_JENKINS_URL"] =
+      "https://pipeline.example.com,https://scheduler.example.com"
+    process.env["MCP_JENKINS_ANONYMOUS"] = "true,false"
+    process.env["MCP_JENKINS_USER"] = ",admin"
+    process.env["MCP_JENKINS_API_TOKEN"] = ",token2"
+
+    const instances = loadAllJenkinsInstances({})
+    expect(instances.get("pipeline")!.JENKINS_ANONYMOUS).toBe(true)
+    expect(instances.get("scheduler")!.JENKINS_ANONYMOUS).toBeUndefined()
+  })
+
+  it("cliArgs.jenkinsAnonymous takes precedence over MCP_JENKINS_ANONYMOUS env var", () => {
+    process.env["MCP_JENKINS_URL"] = "https://jenkins.example.com"
+    process.env["MCP_JENKINS_ANONYMOUS"] = "false"
+
+    const instances = loadAllJenkinsInstances({ jenkinsAnonymous: true })
+    const env = instances.values().next().value
+    expect(env.JENKINS_ANONYMOUS).toBe(true)
   })
 })

@@ -1,6 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { JenkinsClient } from "../../src/lib/jenkins-client.js"
 import * as common from "../../src/common/index.js"
+
+const mockFetchResponse = (body: unknown, setCookie?: string) =>
+  Promise.resolve({
+    ok: true,
+    status: 200,
+    headers: {
+      get: (h: string) => (h === "set-cookie" ? (setCookie ?? null) : null),
+      getSetCookie: () => (setCookie ? [setCookie] : []),
+    },
+    json: () => Promise.resolve(body),
+  } as unknown as Response)
 
 vi.mock("../../src/common/index.js", () => {
   class McpError extends Error {
@@ -38,7 +49,12 @@ describe("JenkinsClient", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal("fetch", vi.fn())
     client = new JenkinsClient()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   describe("constructor", () => {
@@ -241,7 +257,7 @@ describe("JenkinsClient", () => {
   describe("triggerBuild", () => {
     it("should trigger build without parameters", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "abc123" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
         headers: { location: "https://jenkins.example.com/queue/item/123/" },
       })
@@ -264,7 +280,7 @@ describe("JenkinsClient", () => {
 
     it("should trigger build with parameters", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "xyz789" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
         headers: { location: "https://jenkins.example.com/queue/item/456/" },
       })
@@ -281,6 +297,31 @@ describe("JenkinsClient", () => {
             "Content-Type": "application/x-www-form-urlencoded",
           }),
           body: expect.stringContaining("branch=main"),
+        }),
+      )
+    })
+
+    it("captures Set-Cookie from crumb fetch and injects Cookie on POST", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "cookie123",
+      }
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse(mockCrumb, "JSESSIONID=abc123; Path=/"),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
+        headers: { location: "/queue/1" },
+      })
+
+      await client.triggerBuild("my-job")
+
+      expect(common.httpPost).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Cookie: "JSESSIONID=abc123",
+          }),
         }),
       )
     })
@@ -348,7 +389,7 @@ describe("JenkinsClient", () => {
   describe("stopBuild", () => {
     it("should stop a running build", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "stop123" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ headers: {} })
 
       const result = await client.stopBuild("my-job", 50)
@@ -444,7 +485,7 @@ describe("JenkinsClient", () => {
   describe("createJob", () => {
     it("should create a job with XML config", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb1" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.createJob("new-job", "<project/>")
@@ -463,7 +504,7 @@ describe("JenkinsClient", () => {
 
     it("should throw on HTTP 4xx response", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb1" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 400, headers: {} })
 
       await expect(client.createJob("bad-job", "<bad/>")).rejects.toThrow(
@@ -475,7 +516,7 @@ describe("JenkinsClient", () => {
   describe("updateJobConfig", () => {
     it("should update job config", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb2" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.updateJobConfig("my-job", "<project/>")
@@ -491,7 +532,7 @@ describe("JenkinsClient", () => {
   describe("renameJob", () => {
     it("should rename a job", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb3" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.renameJob("old-name", "new-name")
@@ -511,7 +552,7 @@ describe("JenkinsClient", () => {
   describe("copyJob", () => {
     it("should copy a job", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb4" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.copyJob("source-job", "copy-job")
@@ -561,7 +602,7 @@ describe("JenkinsClient", () => {
   describe("toggleNodeOffline", () => {
     it("should toggle node offline", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb5" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.toggleNodeOffline("agent-1", "maintenance")
@@ -633,7 +674,7 @@ describe("JenkinsClient", () => {
   describe("quietDown", () => {
     it("should enable quiet mode", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb6" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.quietDown("scheduled maintenance")
@@ -649,7 +690,7 @@ describe("JenkinsClient", () => {
   describe("cancelQuietDown", () => {
     it("should cancel quiet mode", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb7" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.cancelQuietDown()
@@ -665,7 +706,7 @@ describe("JenkinsClient", () => {
   describe("safeRestart", () => {
     it("should initiate safe restart", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb8" }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
 
       const result = await client.safeRestart()
@@ -684,7 +725,7 @@ describe("JenkinsClient", () => {
         crumbRequestField: "Jenkins-Crumb",
         crumb: "replay123",
       }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
         headers: { location: "https://jenkins.example.com/queue/item/77/" },
       })
@@ -710,7 +751,7 @@ describe("JenkinsClient", () => {
         crumbRequestField: "Jenkins-Crumb",
         crumb: "replay456",
       }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
         headers: { location: "https://jenkins.example.com/queue/item/88/" },
       })
@@ -744,7 +785,7 @@ describe("JenkinsClient", () => {
         crumbRequestField: "Jenkins-Crumb",
         crumb: "replaynoloc",
       }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ headers: {} })
 
       const result = await client.replayBuild("my-pipeline", 3)
@@ -757,7 +798,7 @@ describe("JenkinsClient", () => {
         crumbRequestField: "Jenkins-Crumb",
         crumb: "replay404",
       }
-      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 404, headers: {} })
 
       await expect(client.replayBuild("missing-pipeline", 1)).rejects.toThrow(
