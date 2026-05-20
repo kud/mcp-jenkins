@@ -677,4 +677,92 @@ describe("JenkinsClient", () => {
       )
     })
   })
+
+  describe("replayBuild", () => {
+    it("should replay a build with no body when mainScript is omitted", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "replay123",
+      }
+      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(common.httpPost).mockResolvedValue({
+        headers: { location: "https://jenkins.example.com/queue/item/77/" },
+      })
+
+      const result = await client.replayBuild("my-pipeline", 5)
+
+      expect(result).toEqual({
+        jobName: "my-pipeline",
+        buildNumber: 5,
+        queueUrl: "https://jenkins.example.com/queue/item/77/",
+      })
+      expect(common.httpPost).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/my-pipeline/5/replay/rebuild",
+        expect.not.objectContaining({ body: expect.anything() }),
+      )
+      // Content-Type must NOT be set when there is no body
+      const callArgs = vi.mocked(common.httpPost).mock.calls[0][1] as any
+      expect(callArgs.headers?.["Content-Type"]).toBeUndefined()
+    })
+
+    it("should replay a build with form-encoded body when mainScript is provided", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "replay456",
+      }
+      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(common.httpPost).mockResolvedValue({
+        headers: { location: "https://jenkins.example.com/queue/item/88/" },
+      })
+
+      const script =
+        'pipeline { agent any; stages { stage("S") { steps { echo "ok" } } } }'
+      const result = await client.replayBuild("my-pipeline", 10, script)
+
+      expect(result).toEqual({
+        jobName: "my-pipeline",
+        buildNumber: 10,
+        queueUrl: "https://jenkins.example.com/queue/item/88/",
+      })
+      expect(common.httpPost).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/my-pipeline/10/replay/rebuild",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "Content-Type": "application/x-www-form-urlencoded",
+          }),
+          body: expect.stringContaining("mainScript="),
+        }),
+      )
+      // Verify the body encodes the script correctly
+      const callArgs = vi.mocked(common.httpPost).mock.calls[0][1] as any
+      const params = new URLSearchParams(callArgs.body)
+      expect(params.get("mainScript")).toBe(script)
+    })
+
+    it("should return null queueUrl when Jenkins supplies no Location header", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "replaynoloc",
+      }
+      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(common.httpPost).mockResolvedValue({ headers: {} })
+
+      const result = await client.replayBuild("my-pipeline", 3)
+
+      expect(result.queueUrl).toBeNull()
+    })
+
+    it("should throw job not found error on 404", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "replay404",
+      }
+      vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
+      vi.mocked(common.httpPost).mockRejectedValue(new Error("HTTP 404"))
+
+      await expect(client.replayBuild("missing-pipeline", 1)).rejects.toThrow(
+        "Job not found: missing-pipeline",
+      )
+    })
+  })
 })

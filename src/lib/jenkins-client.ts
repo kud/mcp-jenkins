@@ -840,6 +840,7 @@ export class JenkinsClient {
   async replayBuild(
     jobName: string,
     buildNumber: number,
+    mainScript?: string,
   ): Promise<{
     jobName: string
     buildNumber: number
@@ -850,9 +851,14 @@ export class JenkinsClient {
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
 
     try {
+      const init: RequestInit & { timeoutMs?: number } = { headers }
+      if (mainScript !== undefined) {
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        init.body = new URLSearchParams({ mainScript }).toString()
+      }
       const res = await httpPost(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/replay/rebuild`,
-        { headers },
+        init,
       )
       return { jobName, buildNumber, queueUrl: res.headers["location"] || null }
     } catch (e: any) {

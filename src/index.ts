@@ -342,7 +342,8 @@ const rawTools: Tool[] = [
   },
   {
     name: "jenkins_replay_build",
-    description: "Replay/rerun a pipeline build with the same parameters",
+    description:
+      "Replay/rerun a pipeline build, optionally with a modified pipeline script",
     inputSchema: {
       type: "object",
       properties: {
@@ -353,6 +354,11 @@ const rawTools: Tool[] = [
         buildNumber: {
           type: "number",
           description: "Build number to replay",
+        },
+        mainScript: {
+          type: "string",
+          description:
+            "Optional Groovy pipeline script to use instead of the original. When omitted, the original build script is replayed unchanged.",
         },
       },
       required: ["jobName", "buildNumber"],
