@@ -758,7 +758,7 @@ describe("JenkinsClient", () => {
         crumb: "replay404",
       }
       vi.mocked(common.httpGetJson).mockResolvedValue(mockCrumb)
-      vi.mocked(common.httpPost).mockRejectedValue(new Error("HTTP 404"))
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 404, headers: {} })
 
       await expect(client.replayBuild("missing-pipeline", 1)).rejects.toThrow(
         "Job not found: missing-pipeline",
