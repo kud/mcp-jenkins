@@ -73,6 +73,11 @@ const injectInstance = (tool: Tool): Tool => ({
   },
 })
 
+// Shared annotation presets
+const READ_ONLY = { readOnlyHint: true,  destructiveHint: false, idempotentHint: true  } as const
+const WRITE     = { readOnlyHint: false, destructiveHint: false, idempotentHint: false } as const
+const DESTRUCT  = { readOnlyHint: false, destructiveHint: true,  idempotentHint: false } as const
+
 // Tool definitions with proper MCP schema
 const rawTools: Tool[] = [
   {
@@ -80,6 +85,7 @@ const rawTools: Tool[] = [
     description:
       "List all configured Jenkins instances with their names and URLs",
     inputSchema: { type: "object", properties: {}, required: [] },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_list_jobs",
@@ -89,6 +95,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_search_jobs",
@@ -104,6 +111,7 @@ const rawTools: Tool[] = [
       },
       required: ["query"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_job_status",
@@ -118,6 +126,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_job_parameters",
@@ -133,6 +142,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_build_status",
@@ -151,6 +161,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_recent_builds",
@@ -170,6 +181,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_console_log",
@@ -189,6 +201,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_trigger_build",
@@ -208,6 +221,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: WRITE,
   },
   {
     name: "jenkins_list_artifacts",
@@ -226,6 +240,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_artifact",
@@ -249,6 +264,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber", "relativePath"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_stop_build",
@@ -267,6 +283,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_delete_build",
@@ -285,6 +302,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_get_test_results",
@@ -303,6 +321,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_build_changes",
@@ -321,6 +340,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_pipeline_stages",
@@ -339,6 +359,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_replay_build",
@@ -363,6 +384,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "buildNumber"],
     },
+    annotations: WRITE,
   },
   {
     name: "jenkins_get_queue",
@@ -372,6 +394,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_cancel_queue",
@@ -386,6 +409,7 @@ const rawTools: Tool[] = [
       },
       required: ["queueId"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_enable_job",
@@ -400,6 +424,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: WRITE,
   },
   {
     name: "jenkins_disable_job",
@@ -414,6 +439,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_delete_job",
@@ -428,6 +454,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_get_job_config",
@@ -442,6 +469,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_list_nodes",
@@ -451,6 +479,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_system_info",
@@ -460,6 +489,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_version",
@@ -469,6 +499,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_plugins",
@@ -478,6 +509,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_create_job",
@@ -493,6 +525,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "configXml"],
     },
+    annotations: WRITE,
   },
   {
     name: "jenkins_update_job_config",
@@ -508,6 +541,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "configXml"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_rename_job",
@@ -520,6 +554,7 @@ const rawTools: Tool[] = [
       },
       required: ["jobName", "newName"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_copy_job",
@@ -535,6 +570,7 @@ const rawTools: Tool[] = [
       },
       required: ["fromName", "newName"],
     },
+    annotations: WRITE,
   },
   {
     name: "jenkins_get_node",
@@ -550,6 +586,7 @@ const rawTools: Tool[] = [
       },
       required: ["nodeName"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_toggle_node_offline",
@@ -565,6 +602,7 @@ const rawTools: Tool[] = [
       },
       required: ["nodeName"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_list_views",
@@ -574,6 +612,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_get_view",
@@ -585,6 +624,7 @@ const rawTools: Tool[] = [
       },
       required: ["viewName"],
     },
+    annotations: READ_ONLY,
   },
   {
     name: "jenkins_quiet_down",
@@ -605,6 +645,7 @@ const rawTools: Tool[] = [
       },
       required: ["confirm"],
     },
+    annotations: DESTRUCT,
   },
   {
     name: "jenkins_cancel_quiet_down",
@@ -614,6 +655,7 @@ const rawTools: Tool[] = [
       properties: {},
       required: [],
     },
+    annotations: WRITE,
   },
   {
     name: "jenkins_safe_restart",
@@ -630,6 +672,7 @@ const rawTools: Tool[] = [
       },
       required: ["confirm"],
     },
+    annotations: DESTRUCT,
   },
 ]
 
