@@ -719,6 +719,55 @@ describe("JenkinsClient", () => {
     })
   })
 
+  describe("jobPath (nested folders, URL-style paths, validation)", () => {
+    const mockBuild = { number: 7, building: false }
+
+    it("resolves a plain nested folder name to /job/ segments", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(mockBuild)
+
+      await client.getBuild("folder/sub/my-job", 7)
+
+      expect(common.httpGetJson).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/folder/job/sub/job/my-job/7/api/json",
+        expect.anything(),
+      )
+    })
+
+    it("tolerates a URL-style path that already contains /job/ separators", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(mockBuild)
+
+      await client.getBuild("folder/job/sub/job/my-job", 7)
+
+      expect(common.httpGetJson).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/folder/job/sub/job/my-job/7/api/json",
+        expect.anything(),
+      )
+    })
+
+    it("ignores a stray leading slash", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(mockBuild)
+
+      await client.getBuild("/folder/my-job", 7)
+
+      expect(common.httpGetJson).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/folder/job/my-job/7/api/json",
+        expect.anything(),
+      )
+    })
+
+    it("throws a clear INVALID_INPUT error when jobName is undefined", async () => {
+      await expect(
+        client.getBuild(undefined as unknown as string, 7),
+      ).rejects.toThrow(/jobName is required/)
+    })
+
+    it("throws a clear INVALID_INPUT error when jobName is empty", async () => {
+      await expect(client.listArtifacts("   ", 7)).rejects.toThrow(
+        /jobName is required/,
+      )
+    })
+  })
+
   describe("replayBuild", () => {
     it("should replay a build with no body when mainScript is omitted", async () => {
       const mockCrumb = {

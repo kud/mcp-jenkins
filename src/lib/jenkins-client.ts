@@ -8,8 +8,23 @@ import {
   loadJenkinsEnv,
 } from "../common/index.js"
 
-const jobPath = (name: string): string =>
-  name.split("/").map(encodeURIComponent).join("/job/")
+const jobPath = (name: string): string => {
+  if (typeof name !== "string" || name.trim() === "") {
+    throw new McpError(
+      "INVALID_INPUT",
+      "jobName is required and must be a non-empty string. Use folder/sub/job for nested jobs; the /job/ separators, a leading slash, and the full URL are all tolerated.",
+      400,
+    )
+  }
+  // Accept plain nested names (a/b), URL-style paths that already contain the
+  // /job/ separators (a/job/b), and stray leading/trailing slashes — all of
+  // which should resolve to the same Jenkins path segments.
+  return name
+    .split("/")
+    .filter((segment) => segment.length > 0 && segment !== "job")
+    .map(encodeURIComponent)
+    .join("/job/")
+}
 
 export interface NormalizedBuild {
   id: string
