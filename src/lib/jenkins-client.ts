@@ -11,6 +11,26 @@ import {
 const jobPath = (name: string): string =>
   name.split("/").map(encodeURIComponent).join("/job/")
 
+const normalizeJobFullName = (name: string): string => {
+  const fullName = name.trim().replace(/^\/+|\/+$/g, "")
+  if (!fullName || fullName.split("/").some((segment) => !segment)) {
+    throw Errors.unexpected(
+      "Job name must be a non-empty Jenkins full name without empty path segments",
+    )
+  }
+  return fullName
+}
+
+const createItemUrl = (baseUrl: string, fullName: string): string => {
+  const normalized = normalizeJobFullName(fullName)
+  const lastSlash = normalized.lastIndexOf("/")
+  const parentName = lastSlash === -1 ? "" : normalized.slice(0, lastSlash)
+  const itemName =
+    lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1)
+  const containerPath = parentName ? `/job/${jobPath(parentName)}` : ""
+  return `${baseUrl}${containerPath}/createItem?name=${encodeURIComponent(itemName)}`
+}
+
 export interface NormalizedBuild {
   id: string
   result: "SUCCESS" | "FAILURE" | "ABORTED" | "RUNNING" | string
@@ -22,6 +42,25 @@ export interface NormalizedBuild {
 export interface JenkinsCredentials {
   baseUrl: string
   authHeader?: string
+}
+
+export interface JenkinsJob {
+  name: string
+  url: string
+}
+
+export interface ListJobsOptions {
+  folder?: string
+  recursive?: boolean
+  maxDepth?: number
+  includeFolders?: boolean
+}
+
+interface JenkinsJobApi {
+  name?: string
+  url?: string
+  _class?: string
+  jobs?: unknown[]
 }
 
 interface CrumbInfo {
@@ -64,18 +103,69 @@ export class JenkinsClient {
     return { ...h, ...extra }
   }
 
-  // List jobs (shallow) returns name + url
-  async listJobs(): Promise<{ name: string; url: string }[]> {
-    try {
-      const data = await httpGetJson<any>(`${this.baseUrl}/api/json`, {
+  private isJobContainer(job: JenkinsJobApi): boolean {
+    const className = job._class ?? ""
+    return (
+      Array.isArray(job.jobs) ||
+      className.endsWith("Folder") ||
+      className.includes(".folder.") ||
+      className.endsWith("WorkflowMultiBranchProject")
+    )
+  }
+
+  // List jobs and folders, recursively by default. Nested names are returned
+  // as Jenkins full names (for example, Sandbox/application-sandbox).
+  async listJobs(options: ListJobsOptions = {}): Promise<JenkinsJob[]> {
+    const folder = options.folder?.trim().replace(/^\/+|\/+$/g, "") ?? ""
+    const recursive = options.recursive ?? true
+    const includeFolders = options.includeFolders ?? true
+    const requestedDepth = options.maxDepth ?? 10
+    const maxDepth = Math.min(Math.max(Math.floor(requestedDepth), 0), 100)
+    const jobs: JenkinsJob[] = []
+    const visited = new Set<string>()
+    const tree = "jobs[name,url,_class,jobs[name]]"
+
+    const readContainer = async (
+      parentFullName: string,
+      depth: number,
+    ): Promise<void> => {
+      if (visited.has(parentFullName)) return
+      visited.add(parentFullName)
+
+      const path = parentFullName
+        ? `/job/${jobPath(parentFullName)}/api/json?tree=${tree}`
+        : `/api/json?tree=${tree}`
+      const data = await httpGetJson<any>(`${this.baseUrl}${path}`, {
         headers: this.headers(),
       })
-      if (Array.isArray(data.jobs)) {
-        return data.jobs.map((j: any) => ({ name: j.name, url: j.url }))
+      const children: JenkinsJobApi[] = Array.isArray(data.jobs)
+        ? data.jobs
+        : []
+
+      for (const child of children) {
+        if (!child?.name || !child?.url) continue
+        const fullName = parentFullName
+          ? `${parentFullName}/${child.name}`
+          : child.name
+        const isContainer = this.isJobContainer(child)
+
+        if (includeFolders || !isContainer) {
+          jobs.push({ name: fullName, url: child.url })
+        }
+
+        if (recursive && isContainer && depth < maxDepth) {
+          await readContainer(fullName, depth + 1)
+        }
       }
-      return []
+    }
+
+    try {
+      await readContainer(folder, 0)
+      return jobs
     } catch (e: any) {
       if (e.message?.includes("HTTP 401")) throw Errors.authFailed()
+      if (folder && e.message?.includes("HTTP 404"))
+        throw Errors.jobNotFound(folder)
       throw e
     }
   }
@@ -285,9 +375,12 @@ export class JenkinsClient {
     }
   }
 
-  async searchJobs(query: string): Promise<{ name: string; url: string }[]> {
+  async searchJobs(
+    query: string,
+    options: ListJobsOptions = {},
+  ): Promise<JenkinsJob[]> {
     if (!query.trim()) return []
-    const all = await this.listJobs()
+    const all = await this.listJobs(options)
     const q = query.toLowerCase()
     return all.filter((j) => j.name.toLowerCase().includes(q))
   }
@@ -679,7 +772,7 @@ export class JenkinsClient {
     })
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
     const res = await httpPost(
-      `${this.baseUrl}/createItem?name=${encodeURIComponent(jobName)}`,
+      createItemUrl(this.baseUrl, jobName),
       { headers, body: configXml },
     )
     if (res.status >= 400)
@@ -735,8 +828,9 @@ export class JenkinsClient {
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
     try {
+      const sourceFullName = normalizeJobFullName(fromName)
       const res = await httpPost(
-        `${this.baseUrl}/createItem?name=${encodeURIComponent(newName)}&from=${encodeURIComponent(fromName)}&mode=copy`,
+        `${createItemUrl(this.baseUrl, newName)}&from=${encodeURIComponent(`/${sourceFullName}`)}&mode=copy`,
         { headers },
       )
       if (res.status >= 400)

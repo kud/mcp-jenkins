@@ -1,6 +1,10 @@
-import { JenkinsClient } from '../lib/jenkins-client.js';
+import {
+  JenkinsClient,
+  ListJobsOptions,
+} from '../lib/jenkins-client.js';
 
-export interface SearchJobsInput { query: string }
+export interface SearchJobsInput extends ListJobsOptions { query: string }
 export const searchJobs = async (client: JenkinsClient, input: SearchJobsInput) => {
-  return client.searchJobs(input.query);
+  const { query, ...options } = input;
+  return client.searchJobs(query, options);
 };
