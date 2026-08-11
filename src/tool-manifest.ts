@@ -2,9 +2,21 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js"
 
 // Tool definitions and MCP annotation presets — pure data, no side effects (safe to import in tests).
 // Shared annotation presets
-export const READ_ONLY = { readOnlyHint: true,  destructiveHint: false, idempotentHint: true  } as const
-export const WRITE     = { readOnlyHint: false, destructiveHint: false, idempotentHint: false } as const
-export const DESTRUCT  = { readOnlyHint: false, destructiveHint: true,  idempotentHint: false } as const
+export const READ_ONLY = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+} as const
+export const WRITE = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+} as const
+export const DESTRUCT = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+} as const
 
 // Tool definitions with proper MCP schema
 export const rawTools: Tool[] = [
@@ -18,7 +30,7 @@ export const rawTools: Tool[] = [
   {
     name: "jenkins_list_jobs",
     description:
-      "List Jenkins jobs and folders with full paths; recursively traverses nested folders by default",
+      "List Jenkins jobs and folders with full paths; pass recursive to traverse nested folders",
     inputSchema: {
       type: "object",
       properties: {
@@ -29,8 +41,9 @@ export const rawTools: Tool[] = [
         },
         recursive: {
           type: "boolean",
-          description: "Recursively traverse nested folders (default: true)",
-          default: true,
+          description:
+            "Recursively traverse nested folders. Off by default: traversal costs one sequential request per folder, so a large instance can take minutes (default: false)",
+          default: false,
         },
         maxDepth: {
           type: "number",
@@ -68,8 +81,9 @@ export const rawTools: Tool[] = [
         },
         recursive: {
           type: "boolean",
-          description: "Recursively traverse nested folders (default: true)",
-          default: true,
+          description:
+            "Recursively traverse nested folders. Off by default: traversal costs one sequential request per folder, so a large instance can take minutes (default: false)",
+          default: false,
         },
         maxDepth: {
           type: "number",

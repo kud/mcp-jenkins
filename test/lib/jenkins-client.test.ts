@@ -39,6 +39,7 @@ vi.mock("../../src/common/index.js", () => {
       jobNotFound: (job: string) => new Error(`Job not found: ${job}`),
       artifactNotFound: (path: string) =>
         new Error(`Artifact not found: ${path}`),
+      invalidInput: (msg: string) => new Error(msg),
       unexpected: (msg: string) => new Error(msg),
     },
   }
@@ -137,7 +138,7 @@ describe("JenkinsClient", () => {
           ],
         })
 
-      const jobs = await client.listJobs()
+      const jobs = await client.listJobs({ recursive: true })
 
       expect(jobs.map((job) => job.name)).toEqual([
         "Sandbox",
@@ -155,6 +156,80 @@ describe("JenkinsClient", () => {
         "https://jenkins.example.com/job/Sandbox/job/Team/api/json?tree=jobs[name,url,_class,jobs[name]]",
         expect.anything(),
       )
+    })
+
+    // Recursion is opt-in because traversal is one sequential request per
+    // folder. A true default would give every existing caller that cost without
+    // their call site changing, so this pins the single request.
+    it("should not traverse nested folders unless recursion is requested", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({
+        jobs: [
+          {
+            name: "Sandbox",
+            url: "https://jenkins.example.com/job/Sandbox/",
+            _class: "com.cloudbees.hudson.plugins.folder.Folder",
+            jobs: [{ name: "acceptance-logging-sandbox" }],
+          },
+        ],
+      })
+
+      const jobs = await client.listJobs()
+
+      expect(jobs.map((job) => job.name)).toEqual(["Sandbox"])
+      expect(common.httpGetJson).toHaveBeenCalledTimes(1)
+    })
+
+    // Multibranch projects hold one child per discovered branch, so descending
+    // into them makes traversal cost scale with branch count.
+    it("should not descend into multibranch projects", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({
+        jobs: [
+          {
+            name: "my-service",
+            url: "https://jenkins.example.com/job/my-service/",
+            _class:
+              "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject",
+          },
+        ],
+      })
+
+      const jobs = await client.listJobs({ recursive: true })
+
+      expect(jobs.map((job) => job.name)).toEqual(["my-service"])
+      expect(common.httpGetJson).toHaveBeenCalledTimes(1)
+    })
+
+    // NaN survives Math.floor/max/min and `depth < NaN` is always false, so an
+    // unguarded non-numeric depth returns only the top level and reads as an
+    // empty folder.
+    it("should fall back to the default depth when maxDepth is not a number", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "Sandbox",
+              url: "https://jenkins.example.com/job/Sandbox/",
+              _class: "com.cloudbees.hudson.plugins.folder.Folder",
+              jobs: [{ name: "nested" }],
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "nested",
+              url: "https://jenkins.example.com/job/Sandbox/job/nested/",
+              _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+            },
+          ],
+        })
+
+      const jobs = await client.listJobs({
+        recursive: true,
+        maxDepth: Number.NaN,
+      })
+
+      expect(jobs.map((job) => job.name)).toEqual(["Sandbox", "Sandbox/nested"])
     })
 
     it("should list a selected folder and omit folder entries when requested", async () => {
@@ -187,6 +262,7 @@ describe("JenkinsClient", () => {
       const jobs = await client.listJobs({
         folder: "Sandbox",
         includeFolders: false,
+        recursive: true,
       })
 
       expect(jobs.map((job) => job.name)).toEqual([
@@ -507,7 +583,9 @@ describe("JenkinsClient", () => {
           ],
         })
 
-      const results = await client.searchJobs("acceptance-logging")
+      const results = await client.searchJobs("acceptance-logging", {
+        recursive: true,
+      })
 
       expect(results).toEqual([
         {

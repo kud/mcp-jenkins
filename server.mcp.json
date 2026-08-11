@@ -5,7 +5,7 @@
   "tools": [
     {
       "name": "jenkins_list_jobs",
-      "description": "Recursively list Jenkins jobs and folders with full paths"
+      "description": "List Jenkins jobs and folders with full paths; pass recursive to traverse nested folders"
     },
     {
       "name": "jenkins_search_jobs",

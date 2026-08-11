@@ -14,7 +14,7 @@ const jobPath = (name: string): string =>
 const normalizeJobFullName = (name: string): string => {
   const fullName = name.trim().replace(/^\/+|\/+$/g, "")
   if (!fullName || fullName.split("/").some((segment) => !segment)) {
-    throw Errors.unexpected(
+    throw Errors.invalidInput(
       "Job name must be a non-empty Jenkins full name without empty path segments",
     )
   }
@@ -103,23 +103,42 @@ export class JenkinsClient {
     return { ...h, ...extra }
   }
 
+  // Multibranch projects are deliberately excluded. They hold one child job per
+  // discovered branch, so descending into them enumerates every branch of every
+  // such project -- easily dozens per active repo, surfacing as though they were
+  // ordinary nested jobs, and making traversal cost unpredictable in a way plain
+  // folders are not. `_class` is still returned to callers, so they remain
+  // identifiable; they are just not walked.
   private isJobContainer(job: JenkinsJobApi): boolean {
     const className = job._class ?? ""
     return (
       Array.isArray(job.jobs) ||
       className.endsWith("Folder") ||
-      className.includes(".folder.") ||
-      className.endsWith("WorkflowMultiBranchProject")
+      className.includes(".folder.")
     )
   }
 
-  // List jobs and folders, recursively by default. Nested names are returned
-  // as Jenkins full names (for example, Sandbox/application-sandbox).
+  // List jobs and folders. Nested names are returned as Jenkins full names (for
+  // example, Sandbox/application-sandbox).
+  //
+  // `recursive` defaults to false, and must stay that way. Traversal awaits
+  // sequentially, one HTTP round-trip per container, with no concurrency and no
+  // request budget -- so a tree of 200 folders costs 200 serial requests. With a
+  // true default, every existing `listJobs()` call site would silently acquire
+  // that cost without a single character changing at the call site, so neither
+  // the diff nor the compiler would flag one. `searchJobs()` passes straight
+  // through and filters in memory, which would turn a sub-second tool into a
+  // multi-minute crawl of the whole instance. Recursive-by-default only becomes
+  // safe alongside bounded concurrency and a total-request cap that fails loudly.
   async listJobs(options: ListJobsOptions = {}): Promise<JenkinsJob[]> {
     const folder = options.folder?.trim().replace(/^\/+|\/+$/g, "") ?? ""
-    const recursive = options.recursive ?? true
+    const recursive = options.recursive ?? false
     const includeFolders = options.includeFolders ?? true
-    const requestedDepth = options.maxDepth ?? 10
+    // NaN survives Math.floor/max/min, and `depth < NaN` is always false, so a
+    // non-numeric depth would silently return only the top level -- which reads
+    // as "the folder is empty" rather than as bad input.
+    const requested = options.maxDepth ?? 10
+    const requestedDepth = Number.isFinite(requested) ? requested : 10
     const maxDepth = Math.min(Math.max(Math.floor(requestedDepth), 0), 100)
     const jobs: JenkinsJob[] = []
     const visited = new Set<string>()
@@ -771,10 +790,10 @@ export class JenkinsClient {
       "Content-Type": "application/xml",
     })
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
-    const res = await httpPost(
-      createItemUrl(this.baseUrl, jobName),
-      { headers, body: configXml },
-    )
+    const res = await httpPost(createItemUrl(this.baseUrl, jobName), {
+      headers,
+      body: configXml,
+    })
     if (res.status >= 400)
       throw Errors.unexpected(`Create job failed: HTTP ${res.status}`)
     return { jobName, created: true }
@@ -829,6 +848,14 @@ export class JenkinsClient {
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
     try {
       const sourceFullName = normalizeJobFullName(fromName)
+      // The leading slash on `from` is load-bearing, not stray. Jenkins resolves
+      // `from` through relative item lookup, so an unprefixed name is looked up
+      // relative to the new item's parent folder -- which silently finds the
+      // wrong source, or nothing, whenever the copy crosses folders. The slash
+      // forces absolute resolution from the instance root. Verified end to end
+      // against nested folders; not yet confirmed across Jenkins versions, and
+      // the Folders plugin has moved around in this area, so treat a copy that
+      // fails only on one instance as a candidate for version sensitivity here.
       const res = await httpPost(
         `${createItemUrl(this.baseUrl, newName)}&from=${encodeURIComponent(`/${sourceFullName}`)}&mode=copy`,
         { headers },
