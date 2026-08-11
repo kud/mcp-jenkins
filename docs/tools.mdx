@@ -11,18 +11,18 @@ accepts an optional `instance` parameter to target a specific Jenkins server whe
 
 | Tool                         | Description                                       |
 | ---------------------------- | ------------------------------------------------- |
-| `jenkins_list_jobs`          | List all Jenkins jobs                             |
-| `jenkins_search_jobs`        | Search jobs by name                               |
+| `jenkins_list_jobs`          | List jobs/folders with full paths; opt in to recursion     |
+| `jenkins_search_jobs`        | Search nested jobs by full name                   |
 | `jenkins_get_job_status`     | Get last build status                             |
 | `jenkins_get_job_parameters` | Get parameter definitions for a parameterised job |
 | `jenkins_enable_job`         | Enable a disabled job                             |
 | `jenkins_disable_job`        | Disable a job                                     |
 | `jenkins_delete_job`         | Delete a job (⚠️ permanent)                       |
 | `jenkins_get_job_config`     | Get job XML configuration                         |
-| `jenkins_create_job`         | Create a new job from XML config                  |
+| `jenkins_create_job`         | Create a job from XML config, including in folders |
 | `jenkins_update_job_config`  | Update an existing job's XML config               |
 | `jenkins_rename_job`         | Rename a job                                      |
-| `jenkins_copy_job`           | Copy/duplicate a job                              |
+| `jenkins_copy_job`           | Copy a job within or across folders               |
 
 ## 🔨 Build Operations (9 tools)
 

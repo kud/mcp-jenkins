@@ -11,6 +11,26 @@ import {
 const jobPath = (name: string): string =>
   name.split("/").map(encodeURIComponent).join("/job/")
 
+const normalizeJobFullName = (name: string): string => {
+  const fullName = name.trim().replace(/^\/+|\/+$/g, "")
+  if (!fullName || fullName.split("/").some((segment) => !segment)) {
+    throw Errors.invalidInput(
+      "Job name must be a non-empty Jenkins full name without empty path segments",
+    )
+  }
+  return fullName
+}
+
+const createItemUrl = (baseUrl: string, fullName: string): string => {
+  const normalized = normalizeJobFullName(fullName)
+  const lastSlash = normalized.lastIndexOf("/")
+  const parentName = lastSlash === -1 ? "" : normalized.slice(0, lastSlash)
+  const itemName =
+    lastSlash === -1 ? normalized : normalized.slice(lastSlash + 1)
+  const containerPath = parentName ? `/job/${jobPath(parentName)}` : ""
+  return `${baseUrl}${containerPath}/createItem?name=${encodeURIComponent(itemName)}`
+}
+
 export interface NormalizedBuild {
   id: string
   result: "SUCCESS" | "FAILURE" | "ABORTED" | "RUNNING" | string
@@ -22,6 +42,25 @@ export interface NormalizedBuild {
 export interface JenkinsCredentials {
   baseUrl: string
   authHeader?: string
+}
+
+export interface JenkinsJob {
+  name: string
+  url: string
+}
+
+export interface ListJobsOptions {
+  folder?: string
+  recursive?: boolean
+  maxDepth?: number
+  includeFolders?: boolean
+}
+
+interface JenkinsJobApi {
+  name?: string
+  url?: string
+  _class?: string
+  jobs?: unknown[]
 }
 
 interface CrumbInfo {
@@ -64,18 +103,88 @@ export class JenkinsClient {
     return { ...h, ...extra }
   }
 
-  // List jobs (shallow) returns name + url
-  async listJobs(): Promise<{ name: string; url: string }[]> {
-    try {
-      const data = await httpGetJson<any>(`${this.baseUrl}/api/json`, {
+  // Multibranch projects are deliberately excluded. They hold one child job per
+  // discovered branch, so descending into them enumerates every branch of every
+  // such project -- easily dozens per active repo, surfacing as though they were
+  // ordinary nested jobs, and making traversal cost unpredictable in a way plain
+  // folders are not. `_class` is still returned to callers, so they remain
+  // identifiable; they are just not walked.
+  private isJobContainer(job: JenkinsJobApi): boolean {
+    const className = job._class ?? ""
+    return (
+      Array.isArray(job.jobs) ||
+      className.endsWith("Folder") ||
+      className.includes(".folder.")
+    )
+  }
+
+  // List jobs and folders. Nested names are returned as Jenkins full names (for
+  // example, Sandbox/application-sandbox).
+  //
+  // `recursive` defaults to false, and must stay that way. Traversal awaits
+  // sequentially, one HTTP round-trip per container, with no concurrency and no
+  // request budget -- so a tree of 200 folders costs 200 serial requests. With a
+  // true default, every existing `listJobs()` call site would silently acquire
+  // that cost without a single character changing at the call site, so neither
+  // the diff nor the compiler would flag one. `searchJobs()` passes straight
+  // through and filters in memory, which would turn a sub-second tool into a
+  // multi-minute crawl of the whole instance. Recursive-by-default only becomes
+  // safe alongside bounded concurrency and a total-request cap that fails loudly.
+  async listJobs(options: ListJobsOptions = {}): Promise<JenkinsJob[]> {
+    const folder = options.folder?.trim().replace(/^\/+|\/+$/g, "") ?? ""
+    const recursive = options.recursive ?? false
+    const includeFolders = options.includeFolders ?? true
+    // NaN survives Math.floor/max/min, and `depth < NaN` is always false, so a
+    // non-numeric depth would silently return only the top level -- which reads
+    // as "the folder is empty" rather than as bad input.
+    const requested = options.maxDepth ?? 10
+    const requestedDepth = Number.isFinite(requested) ? requested : 10
+    const maxDepth = Math.min(Math.max(Math.floor(requestedDepth), 0), 100)
+    const jobs: JenkinsJob[] = []
+    const visited = new Set<string>()
+    const tree = "jobs[name,url,_class,jobs[name]]"
+
+    const readContainer = async (
+      parentFullName: string,
+      depth: number,
+    ): Promise<void> => {
+      if (visited.has(parentFullName)) return
+      visited.add(parentFullName)
+
+      const path = parentFullName
+        ? `/job/${jobPath(parentFullName)}/api/json?tree=${tree}`
+        : `/api/json?tree=${tree}`
+      const data = await httpGetJson<any>(`${this.baseUrl}${path}`, {
         headers: this.headers(),
       })
-      if (Array.isArray(data.jobs)) {
-        return data.jobs.map((j: any) => ({ name: j.name, url: j.url }))
+      const children: JenkinsJobApi[] = Array.isArray(data.jobs)
+        ? data.jobs
+        : []
+
+      for (const child of children) {
+        if (!child?.name || !child?.url) continue
+        const fullName = parentFullName
+          ? `${parentFullName}/${child.name}`
+          : child.name
+        const isContainer = this.isJobContainer(child)
+
+        if (includeFolders || !isContainer) {
+          jobs.push({ name: fullName, url: child.url })
+        }
+
+        if (recursive && isContainer && depth < maxDepth) {
+          await readContainer(fullName, depth + 1)
+        }
       }
-      return []
+    }
+
+    try {
+      await readContainer(folder, 0)
+      return jobs
     } catch (e: any) {
       if (e.message?.includes("HTTP 401")) throw Errors.authFailed()
+      if (folder && e.message?.includes("HTTP 404"))
+        throw Errors.jobNotFound(folder)
       throw e
     }
   }
@@ -285,9 +394,12 @@ export class JenkinsClient {
     }
   }
 
-  async searchJobs(query: string): Promise<{ name: string; url: string }[]> {
+  async searchJobs(
+    query: string,
+    options: ListJobsOptions = {},
+  ): Promise<JenkinsJob[]> {
     if (!query.trim()) return []
-    const all = await this.listJobs()
+    const all = await this.listJobs(options)
     const q = query.toLowerCase()
     return all.filter((j) => j.name.toLowerCase().includes(q))
   }
@@ -678,10 +790,10 @@ export class JenkinsClient {
       "Content-Type": "application/xml",
     })
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
-    const res = await httpPost(
-      `${this.baseUrl}/createItem?name=${encodeURIComponent(jobName)}`,
-      { headers, body: configXml },
-    )
+    const res = await httpPost(createItemUrl(this.baseUrl, jobName), {
+      headers,
+      body: configXml,
+    })
     if (res.status >= 400)
       throw Errors.unexpected(`Create job failed: HTTP ${res.status}`)
     return { jobName, created: true }
@@ -735,8 +847,17 @@ export class JenkinsClient {
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
     try {
+      const sourceFullName = normalizeJobFullName(fromName)
+      // The leading slash on `from` is load-bearing, not stray. Jenkins resolves
+      // `from` through relative item lookup, so an unprefixed name is looked up
+      // relative to the new item's parent folder -- which silently finds the
+      // wrong source, or nothing, whenever the copy crosses folders. The slash
+      // forces absolute resolution from the instance root. Verified end to end
+      // against nested folders; not yet confirmed across Jenkins versions, and
+      // the Folders plugin has moved around in this area, so treat a copy that
+      // fails only on one instance as a candidate for version sensitivity here.
       const res = await httpPost(
-        `${this.baseUrl}/createItem?name=${encodeURIComponent(newName)}&from=${encodeURIComponent(fromName)}&mode=copy`,
+        `${createItemUrl(this.baseUrl, newName)}&from=${encodeURIComponent(`/${sourceFullName}`)}&mode=copy`,
         { headers },
       )
       if (res.status >= 400)

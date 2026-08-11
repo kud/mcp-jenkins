@@ -39,6 +39,7 @@ vi.mock("../../src/common/index.js", () => {
       jobNotFound: (job: string) => new Error(`Job not found: ${job}`),
       artifactNotFound: (path: string) =>
         new Error(`Artifact not found: ${path}`),
+      invalidInput: (msg: string) => new Error(msg),
       unexpected: (msg: string) => new Error(msg),
     },
   }
@@ -91,12 +92,187 @@ describe("JenkinsClient", () => {
         { name: "job-2", url: "https://jenkins.example.com/job/job-2" },
       ])
       expect(common.httpGetJson).toHaveBeenCalledWith(
-        "https://jenkins.example.com/api/json",
+        "https://jenkins.example.com/api/json?tree=jobs[name,url,_class,jobs[name]]",
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: expect.any(String),
           }),
         }),
+      )
+    })
+
+    it("should recursively list jobs in nested folders using full names", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "Sandbox",
+              url: "https://jenkins.example.com/job/Sandbox/",
+              _class: "com.cloudbees.hudson.plugins.folder.Folder",
+              jobs: [{ name: "acceptance-logging-sandbox" }],
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "acceptance-logging-sandbox",
+              url: "https://jenkins.example.com/job/Sandbox/job/acceptance-logging-sandbox/",
+              _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+            },
+            {
+              name: "Team",
+              url: "https://jenkins.example.com/job/Sandbox/job/Team/",
+              _class: "com.cloudbees.hudson.plugins.folder.Folder",
+              jobs: [{ name: "deep-job" }],
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "deep-job",
+              url: "https://jenkins.example.com/job/Sandbox/job/Team/job/deep-job/",
+              _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+            },
+          ],
+        })
+
+      const jobs = await client.listJobs({ recursive: true })
+
+      expect(jobs.map((job) => job.name)).toEqual([
+        "Sandbox",
+        "Sandbox/acceptance-logging-sandbox",
+        "Sandbox/Team",
+        "Sandbox/Team/deep-job",
+      ])
+      expect(common.httpGetJson).toHaveBeenNthCalledWith(
+        2,
+        "https://jenkins.example.com/job/Sandbox/api/json?tree=jobs[name,url,_class,jobs[name]]",
+        expect.anything(),
+      )
+      expect(common.httpGetJson).toHaveBeenNthCalledWith(
+        3,
+        "https://jenkins.example.com/job/Sandbox/job/Team/api/json?tree=jobs[name,url,_class,jobs[name]]",
+        expect.anything(),
+      )
+    })
+
+    // Recursion is opt-in because traversal is one sequential request per
+    // folder. A true default would give every existing caller that cost without
+    // their call site changing, so this pins the single request.
+    it("should not traverse nested folders unless recursion is requested", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({
+        jobs: [
+          {
+            name: "Sandbox",
+            url: "https://jenkins.example.com/job/Sandbox/",
+            _class: "com.cloudbees.hudson.plugins.folder.Folder",
+            jobs: [{ name: "acceptance-logging-sandbox" }],
+          },
+        ],
+      })
+
+      const jobs = await client.listJobs()
+
+      expect(jobs.map((job) => job.name)).toEqual(["Sandbox"])
+      expect(common.httpGetJson).toHaveBeenCalledTimes(1)
+    })
+
+    // Multibranch projects hold one child per discovered branch, so descending
+    // into them makes traversal cost scale with branch count.
+    it("should not descend into multibranch projects", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({
+        jobs: [
+          {
+            name: "my-service",
+            url: "https://jenkins.example.com/job/my-service/",
+            _class:
+              "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject",
+          },
+        ],
+      })
+
+      const jobs = await client.listJobs({ recursive: true })
+
+      expect(jobs.map((job) => job.name)).toEqual(["my-service"])
+      expect(common.httpGetJson).toHaveBeenCalledTimes(1)
+    })
+
+    // NaN survives Math.floor/max/min and `depth < NaN` is always false, so an
+    // unguarded non-numeric depth returns only the top level and reads as an
+    // empty folder.
+    it("should fall back to the default depth when maxDepth is not a number", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "Sandbox",
+              url: "https://jenkins.example.com/job/Sandbox/",
+              _class: "com.cloudbees.hudson.plugins.folder.Folder",
+              jobs: [{ name: "nested" }],
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "nested",
+              url: "https://jenkins.example.com/job/Sandbox/job/nested/",
+              _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+            },
+          ],
+        })
+
+      const jobs = await client.listJobs({
+        recursive: true,
+        maxDepth: Number.NaN,
+      })
+
+      expect(jobs.map((job) => job.name)).toEqual(["Sandbox", "Sandbox/nested"])
+    })
+
+    it("should list a selected folder and omit folder entries when requested", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "acceptance-logging-sandbox",
+              url: "https://jenkins.example.com/job/Sandbox/job/acceptance-logging-sandbox/",
+              _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+            },
+            {
+              name: "Team",
+              url: "https://jenkins.example.com/job/Sandbox/job/Team/",
+              _class: "com.cloudbees.hudson.plugins.folder.Folder",
+              jobs: [{ name: "deep-job" }],
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "deep-job",
+              url: "https://jenkins.example.com/job/Sandbox/job/Team/job/deep-job/",
+              _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+            },
+          ],
+        })
+
+      const jobs = await client.listJobs({
+        folder: "Sandbox",
+        includeFolders: false,
+        recursive: true,
+      })
+
+      expect(jobs.map((job) => job.name)).toEqual([
+        "Sandbox/acceptance-logging-sandbox",
+        "Sandbox/Team/deep-job",
+      ])
+      expect(common.httpGetJson).toHaveBeenNthCalledWith(
+        1,
+        "https://jenkins.example.com/job/Sandbox/api/json?tree=jobs[name,url,_class,jobs[name]]",
+        expect.anything(),
       )
     })
 
@@ -384,6 +560,40 @@ describe("JenkinsClient", () => {
 
       expect(results).toEqual([])
     })
+
+    it("should search nested jobs by their full names", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "Sandbox",
+              url: "https://jenkins.example.com/job/Sandbox/",
+              _class: "com.cloudbees.hudson.plugins.folder.Folder",
+              jobs: [{ name: "acceptance-logging-sandbox" }],
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          jobs: [
+            {
+              name: "acceptance-logging-sandbox",
+              url: "https://jenkins.example.com/job/Sandbox/job/acceptance-logging-sandbox/",
+              _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+            },
+          ],
+        })
+
+      const results = await client.searchJobs("acceptance-logging", {
+        recursive: true,
+      })
+
+      expect(results).toEqual([
+        {
+          name: "Sandbox/acceptance-logging-sandbox",
+          url: "https://jenkins.example.com/job/Sandbox/job/acceptance-logging-sandbox/",
+        },
+      ])
+    })
   })
 
   describe("stopBuild", () => {
@@ -502,6 +712,26 @@ describe("JenkinsClient", () => {
       )
     })
 
+    it("should create a job inside a nested folder", async () => {
+      const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb1" }
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
+
+      const result = await client.createJob(
+        "DEV-EKS/Team A/demo-pipeline",
+        "<flow-definition/>",
+      )
+
+      expect(result).toEqual({
+        jobName: "DEV-EKS/Team A/demo-pipeline",
+        created: true,
+      })
+      expect(common.httpPost).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/DEV-EKS/job/Team%20A/createItem?name=demo-pipeline",
+        expect.objectContaining({ body: "<flow-definition/>" }),
+      )
+    })
+
     it("should throw on HTTP 4xx response", async () => {
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb1" }
       vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
@@ -563,7 +793,28 @@ describe("JenkinsClient", () => {
         copied: true,
       })
       expect(common.httpPost).toHaveBeenCalledWith(
-        expect.stringContaining("from=source-job"),
+        "https://jenkins.example.com/createItem?name=copy-job&from=%2Fsource-job&mode=copy",
+        expect.anything(),
+      )
+    })
+
+    it("should copy a nested source job into a nested destination folder", async () => {
+      const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "crumb4" }
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
+
+      const result = await client.copyJob(
+        "DEV-EKS/templates/source-pipeline",
+        "Sandbox/Team A/copied-pipeline",
+      )
+
+      expect(result).toEqual({
+        fromName: "DEV-EKS/templates/source-pipeline",
+        newName: "Sandbox/Team A/copied-pipeline",
+        copied: true,
+      })
+      expect(common.httpPost).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/Sandbox/job/Team%20A/createItem?name=copied-pipeline&from=%2FDEV-EKS%2Ftemplates%2Fsource-pipeline&mode=copy",
         expect.anything(),
       )
     })

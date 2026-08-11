@@ -2,9 +2,21 @@ import { Tool } from "@modelcontextprotocol/sdk/types.js"
 
 // Tool definitions and MCP annotation presets — pure data, no side effects (safe to import in tests).
 // Shared annotation presets
-export const READ_ONLY = { readOnlyHint: true,  destructiveHint: false, idempotentHint: true  } as const
-export const WRITE     = { readOnlyHint: false, destructiveHint: false, idempotentHint: false } as const
-export const DESTRUCT  = { readOnlyHint: false, destructiveHint: true,  idempotentHint: false } as const
+export const READ_ONLY = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+} as const
+export const WRITE = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+} as const
+export const DESTRUCT = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+} as const
 
 // Tool definitions with proper MCP schema
 export const rawTools: Tool[] = [
@@ -17,10 +29,36 @@ export const rawTools: Tool[] = [
   },
   {
     name: "jenkins_list_jobs",
-    description: "List all Jenkins jobs with their names and URLs",
+    description:
+      "List Jenkins jobs and folders with full paths; pass recursive to traverse nested folders",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        folder: {
+          type: "string",
+          description:
+            'Optional Jenkins folder full name to list (for example, "Sandbox")',
+        },
+        recursive: {
+          type: "boolean",
+          description:
+            "Recursively traverse nested folders. Off by default: traversal costs one sequential request per folder, so a large instance can take minutes (default: false)",
+          default: false,
+        },
+        maxDepth: {
+          type: "number",
+          description:
+            "Maximum folder depth to traverse, from 0 through 100 (default: 10)",
+          default: 10,
+          minimum: 0,
+          maximum: 100,
+        },
+        includeFolders: {
+          type: "boolean",
+          description: "Include folders in results (default: true)",
+          default: true,
+        },
+      },
       required: [],
     },
     annotations: READ_ONLY,
@@ -34,7 +72,31 @@ export const rawTools: Tool[] = [
       properties: {
         query: {
           type: "string",
-          description: "Search query to filter jobs by name",
+          description: "Search query to filter jobs by full name",
+        },
+        folder: {
+          type: "string",
+          description:
+            'Optional Jenkins folder full name to search (for example, "Sandbox")',
+        },
+        recursive: {
+          type: "boolean",
+          description:
+            "Recursively traverse nested folders. Off by default: traversal costs one sequential request per folder, so a large instance can take minutes (default: false)",
+          default: false,
+        },
+        maxDepth: {
+          type: "number",
+          description:
+            "Maximum folder depth to traverse, from 0 through 100 (default: 10)",
+          default: 10,
+          minimum: 0,
+          maximum: 100,
+        },
+        includeFolders: {
+          type: "boolean",
+          description: "Include folders in search results (default: true)",
+          default: true,
         },
       },
       required: ["query"],
@@ -445,7 +507,11 @@ export const rawTools: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        jobName: { type: "string", description: "Name for the new job" },
+        jobName: {
+          type: "string",
+          description:
+            'Full name for the new job; use "Folder/job-name" to create it inside a folder',
+        },
         configXml: {
           type: "string",
           description: "Jenkins job XML configuration",
@@ -492,9 +558,14 @@ export const rawTools: Tool[] = [
       properties: {
         fromName: {
           type: "string",
-          description: "Source job name to copy from",
+          description:
+            'Source job full name, for example "DEV-EKS/template-eks-dev"',
         },
-        newName: { type: "string", description: "Name for the new job copy" },
+        newName: {
+          type: "string",
+          description:
+            'Destination job full name; use "Folder/job-name" to copy into a folder',
+        },
       },
       required: ["fromName", "newName"],
     },

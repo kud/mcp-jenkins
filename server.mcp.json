@@ -5,11 +5,11 @@
   "tools": [
     {
       "name": "jenkins_list_jobs",
-      "description": "List all Jenkins jobs with their names and URLs"
+      "description": "List Jenkins jobs and folders with full paths; pass recursive to traverse nested folders"
     },
     {
       "name": "jenkins_search_jobs",
-      "description": "Search for Jenkins jobs by name (case-insensitive substring match)"
+      "description": "Search nested Jenkins jobs by full name (case-insensitive substring match)"
     },
     {
       "name": "jenkins_get_job_status",
