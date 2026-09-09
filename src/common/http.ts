@@ -1,5 +1,13 @@
 import { Errors } from './errors.js';
 
+// Every request this server makes is bounded by one deadline, and this is it
+// when no caller overrides it. 10 s suits a responsive instance; a large or busy
+// Jenkins can spend longer than that just loading a build record from disk,
+// which surfaces to the caller as this server timing out rather than as anything
+// Jenkins said. Overridable per call, and configurable process-wide via
+// MCP_JENKINS_TIMEOUT_MS. See issue #18.
+export const DEFAULT_TIMEOUT_MS = 10000;
+
 export interface HttpClientOptions {
   timeoutMs?: number;
   headers?: Record<string, string>;
@@ -7,7 +15,7 @@ export interface HttpClientOptions {
 
 export const httpGetJson = async <T>(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<T> => {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? 10000);
+  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...init, signal: controller.signal });
     if (res.status === 401) throw Errors.authFailed();
@@ -23,7 +31,7 @@ export const httpGetJson = async <T>(url: string, init: RequestInit & { timeoutM
 
 export const httpGetText = async (url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<string> => {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? 10000);
+  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...init, signal: controller.signal });
     if (res.status === 401) throw Errors.authFailed();
@@ -39,7 +47,7 @@ export const httpGetText = async (url: string, init: RequestInit & { timeoutMs?:
 
 export const httpPost = async (url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<{ status: number; headers: Record<string, string | null> }> => {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? 10000);
+  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetch(url, { method: 'POST', ...init, signal: controller.signal });
     if (res.status === 401) throw Errors.authFailed();
@@ -52,7 +60,7 @@ export const httpPost = async (url: string, init: RequestInit & { timeoutMs?: nu
 
 export const httpGetBuffer = async (url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Buffer> => {
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? 10000);
+  const t = setTimeout(() => controller.abort(), init.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
     const res = await fetch(url, { ...init, signal: controller.signal });
     if (res.status === 401) throw Errors.authFailed();

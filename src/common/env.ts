@@ -1,5 +1,8 @@
+import { DEFAULT_TIMEOUT_MS } from "./http.js"
+
 export interface JenkinsEnv {
   JENKINS_URL: string
+  JENKINS_TIMEOUT_MS: number
   JENKINS_USER?: string
   JENKINS_API_TOKEN?: string
   JENKINS_BEARER_TOKEN?: string
@@ -8,6 +11,7 @@ export interface JenkinsEnv {
 
 export interface CliArgs {
   jenkinsUrl?: string
+  jenkinsTimeoutMs?: string
   jenkinsUser?: string
   jenkinsApiToken?: string
   jenkinsBearerToken?: string
@@ -30,6 +34,17 @@ const getConfigValue = (
   return process.env[mcpEnvKey]
 }
 
+const parseTimeoutMs = (raw: string | undefined): number => {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_TIMEOUT_MS
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `Invalid timeout \`${raw}\` — MCP_JENKINS_TIMEOUT_MS (or --timeout-ms) must be a positive whole number of milliseconds`,
+    )
+  }
+  return parsed
+}
+
 const splitValues = (value: string | undefined): string[] =>
   value ? value.split(/[,|]/).map((v) => v.trim()) : []
 
@@ -39,6 +54,7 @@ const buildInstanceEnv = (
   apiToken: string | undefined,
   bearerToken: string | undefined,
   anonymous: boolean,
+  timeoutMs: number,
 ): JenkinsEnv => {
   const hasBasicAuth = user && apiToken
   const hasBearerAuth = bearerToken
@@ -60,6 +76,7 @@ const buildInstanceEnv = (
 
   return {
     JENKINS_URL: url.replace(/\/$/, ""),
+    JENKINS_TIMEOUT_MS: timeoutMs,
     JENKINS_USER: user || undefined,
     JENKINS_API_TOKEN: apiToken || undefined,
     JENKINS_BEARER_TOKEN: bearerToken || undefined,
@@ -74,6 +91,9 @@ const buildInstanceEnv = (
  *   MCP_JENKINS_URL=https://jenkins.example.com
  *   MCP_JENKINS_USER=admin
  *   MCP_JENKINS_API_TOKEN=token
+ *
+ * Optional, applying to every instance:
+ *   MCP_JENKINS_TIMEOUT_MS=30000
  *
  * Multiple instances (comma or pipe separated, positional):
  *   MCP_JENKINS_INSTANCES=pipeline,scheduler
@@ -104,6 +124,10 @@ export const loadAllJenkinsInstances = (
       : undefined,
     "MCP_JENKINS_ANONYMOUS",
   )
+  const rawTimeoutMs = getConfigValue(
+    cliArgs?.jenkinsTimeoutMs,
+    "MCP_JENKINS_TIMEOUT_MS",
+  )
   const rawInstances = process.env["MCP_JENKINS_INSTANCES"]
 
   if (!rawUrl) {
@@ -129,6 +153,11 @@ export const loadAllJenkinsInstances = (
     )
   }
 
+  // One deadline for every instance. A per-instance split would follow the
+  // positional pattern above, but nobody has asked for two Jenkins that need
+  // different budgets, and a single value is one thing to explain.
+  const timeoutMs = parseTimeoutMs(rawTimeoutMs)
+
   const instances = new Map<string, JenkinsEnv>()
 
   for (let i = 0; i < urls.length; i++) {
@@ -142,7 +171,7 @@ export const loadAllJenkinsInstances = (
       "true"
     instances.set(
       name,
-      buildInstanceEnv(url, user, apiToken, bearerToken, anonymous),
+      buildInstanceEnv(url, user, apiToken, bearerToken, anonymous, timeoutMs),
     )
   }
 

@@ -24,6 +24,7 @@ vi.mock("../../src/common/index.js", () => {
     }
   }
   return {
+    DEFAULT_TIMEOUT_MS: 10000,
     httpGetJson: vi.fn(),
     httpGetText: vi.fn(),
     httpPost: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("../../src/common/index.js", () => {
       JENKINS_URL: "https://jenkins.example.com",
       JENKINS_USER: "testuser",
       JENKINS_API_TOKEN: "testtoken",
+      JENKINS_TIMEOUT_MS: 10000,
     })),
     McpError,
     Errors: {
@@ -1056,5 +1058,96 @@ describe("JenkinsClient", () => {
         "Job not found: missing-pipeline",
       )
     })
+  })
+})
+
+describe("JenkinsClient — request deadline (issue #18)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal("fetch", vi.fn())
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  // Pins the contract as it stood before timeoutMs existed: a caller that
+  // constructs the client the old way still gets the 10 s deadline.
+  it("keeps the 10 s default when credentials omit timeoutMs", () => {
+    const client = new JenkinsClient({ baseUrl: "https://jenkins.example.com" })
+    expect(client.timeoutMs).toBe(10000)
+  })
+
+  it("takes the deadline from credentials when given", () => {
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      timeoutMs: 60000,
+    })
+    expect(client.timeoutMs).toBe(60000)
+  })
+
+  it("takes the deadline from the environment when constructed bare", () => {
+    vi.mocked(common.loadJenkinsEnv).mockReturnValueOnce({
+      JENKINS_URL: "https://jenkins.example.com",
+      JENKINS_USER: "u",
+      JENKINS_API_TOKEN: "t",
+      JENKINS_TIMEOUT_MS: 45000,
+    } as never)
+    expect(new JenkinsClient().timeoutMs).toBe(45000)
+  })
+
+  it("sends the configured deadline on the request, not the transport default", async () => {
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      timeoutMs: 60000,
+    })
+    vi.mocked(common.httpGetJson).mockResolvedValue({ builds: [] })
+    await client.getRecentBuilds("test-job", 5)
+    expect(common.httpGetJson).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ timeoutMs: 60000 }),
+    )
+  })
+})
+
+describe("JenkinsClient — query shape (issue #18)", () => {
+  let client: JenkinsClient
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubGlobal("fetch", vi.fn())
+    client = new JenkinsClient()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const urlOf = () => vi.mocked(common.httpGetJson).mock.calls[0][0] as string
+
+  it("asks Jenkins for a slice of builds rather than expanding every one", async () => {
+    vi.mocked(common.httpGetJson).mockResolvedValue({ builds: [] })
+    await client.getRecentBuilds("test-job", 3)
+    expect(urlOf()).not.toContain("depth=1")
+    expect(urlOf()).toContain(
+      "tree=builds[number,result,duration,timestamp,url,building]{0,3}",
+    )
+  })
+
+  it("names only the fields it reads on a single build", async () => {
+    vi.mocked(common.httpGetJson).mockResolvedValue({ number: 55 })
+    await client.getBuild("my-job", 55)
+    expect(urlOf()).toContain(
+      "tree=number,result,duration,timestamp,url,building",
+    )
+  })
+
+  it("names only the fields it reads on the last build", async () => {
+    vi.mocked(common.httpGetJson).mockResolvedValue({ number: 55 })
+    await client.getLastBuild("my-job")
+    expect(urlOf()).toContain(
+      "tree=number,result,duration,timestamp,url,building",
+    )
+  })
+
+  it.each([0, -1, 1.5])("rejects a limit of %s", async (limit) => {
+    await expect(client.getRecentBuilds("test-job", limit)).rejects.toThrow(
+      /positive whole number/,
+    )
+    expect(common.httpGetJson).not.toHaveBeenCalled()
   })
 })

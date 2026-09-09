@@ -57,6 +57,32 @@ For bearer token authentication, replace the env block with:
 }
 ```
 
+### Slow instances
+
+Every request this server makes is bounded by one deadline, **10 seconds** by default. A large or busy Jenkins can spend longer than that answering a single call — and when it does, the error you see (`Jenkins request timed out`) comes from this server giving up, not from Jenkins refusing anything.
+
+Raise it with `MCP_JENKINS_TIMEOUT_MS`:
+
+```json
+"env": {
+  "MCP_JENKINS_URL": "https://pipeline.yourcompany.com",
+  "MCP_JENKINS_BEARER_TOKEN": "your_bearer_token",
+  "MCP_JENKINS_TIMEOUT_MS": "30000"
+}
+```
+
+Or on the command line:
+
+```sh
+mcp-jenkins --url https://pipeline.yourcompany.com --bearer-token abc123 --timeout-ms 30000
+```
+
+One value applies to every configured instance. To find out what your instance actually needs, time the call the server makes:
+
+```sh
+time curl -u user:token 'https://pipeline.yourcompany.com/job/my-job/api/json'
+```
+
 ### Tools
 
 | Category                | Tools                                                                                                                                                                                                                                                                                        |

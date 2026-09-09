@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TIMEOUT_MS,
   httpGetJson,
   httpGetText,
   httpPost,
@@ -31,6 +32,12 @@ const createItemUrl = (baseUrl: string, fullName: string): string => {
   return `${baseUrl}${containerPath}/createItem?name=${encodeURIComponent(itemName)}`
 }
 
+// The exact set of fields normalizeBuild reads. Sent as a `tree` filter so
+// Jenkins serialises these and nothing else — without one it returns the entire
+// build record, changeset and all, of which we keep six values.
+const BUILD_FIELDS = "number,result,duration,timestamp,url,building"
+const BUILD_TREE = `builds[${BUILD_FIELDS}]`
+
 export interface NormalizedBuild {
   id: string
   result: "SUCCESS" | "FAILURE" | "ABORTED" | "RUNNING" | string
@@ -42,6 +49,8 @@ export interface NormalizedBuild {
 export interface JenkinsCredentials {
   baseUrl: string
   authHeader?: string
+  /** Per-request deadline in ms. Defaults to DEFAULT_TIMEOUT_MS when omitted. */
+  timeoutMs?: number
 }
 
 export interface JenkinsJob {
@@ -70,6 +79,7 @@ interface CrumbInfo {
 
 export class JenkinsClient {
   readonly baseUrl: string
+  readonly timeoutMs: number
   private authHeader: string | undefined
   private crumb?: CrumbInfo
   private cookies: string | undefined
@@ -78,9 +88,11 @@ export class JenkinsClient {
     if (credentials) {
       this.baseUrl = credentials.baseUrl
       this.authHeader = credentials.authHeader
+      this.timeoutMs = credentials.timeoutMs ?? DEFAULT_TIMEOUT_MS
     } else {
       const env = loadJenkinsEnv()
       this.baseUrl = env.JENKINS_URL
+      this.timeoutMs = env.JENKINS_TIMEOUT_MS
 
       if (env.JENKINS_ANONYMOUS) {
         this.authHeader = undefined
@@ -94,6 +106,15 @@ export class JenkinsClient {
           )
       }
     }
+  }
+
+  // Every request goes out with the configured deadline. Built here rather than
+  // spelled at each of the thirty-odd call sites, so a new one cannot silently
+  // fall back to the transport default and reintroduce issue #18.
+  private req(extra?: Record<string, string>): RequestInit & {
+    timeoutMs: number
+  } {
+    return { headers: this.headers(extra), timeoutMs: this.timeoutMs }
   }
 
   private headers(extra?: Record<string, string>): Record<string, string> {
@@ -154,9 +175,7 @@ export class JenkinsClient {
       const path = parentFullName
         ? `/job/${jobPath(parentFullName)}/api/json?tree=${tree}`
         : `/api/json?tree=${tree}`
-      const data = await httpGetJson<any>(`${this.baseUrl}${path}`, {
-        headers: this.headers(),
-      })
+      const data = await httpGetJson<any>(`${this.baseUrl}${path}`, this.req())
       const children: JenkinsJobApi[] = Array.isArray(data.jobs)
         ? data.jobs
         : []
@@ -194,10 +213,17 @@ export class JenkinsClient {
     jobName: string,
     limit = 5,
   ): Promise<NormalizedBuild[]> {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw Errors.invalidInput("limit must be a positive whole number")
+    }
     try {
+      // `depth=1` expanded every build the job has ever run and then threw all
+      // but `limit` away here, which on a job with thousands of builds is the
+      // whole cost of the call. The tree names only what normalizeBuild reads,
+      // and the range suffix makes Jenkins do the slicing. See issue #18.
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?depth=1`,
-        { headers: this.headers() },
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=${BUILD_TREE}{0,${limit}}`,
+        this.req(),
       )
       if (!raw.builds) return []
       const builds = raw.builds
@@ -227,8 +253,8 @@ export class JenkinsClient {
   async getLastBuild(jobName: string): Promise<NormalizedBuild> {
     try {
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/lastBuild/api/json`,
-        { headers: this.headers() },
+        `${this.baseUrl}/job/${jobPath(jobName)}/lastBuild/api/json?tree=${BUILD_FIELDS}`,
+        this.req(),
       )
       return this.normalizeBuild(raw)
     } catch (e: any) {
@@ -243,8 +269,8 @@ export class JenkinsClient {
   ): Promise<NormalizedBuild> {
     try {
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json`,
-        { headers: this.headers() },
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=${BUILD_FIELDS}`,
+        this.req(),
       )
       return this.normalizeBuild(raw)
     } catch (e: any) {
@@ -270,7 +296,7 @@ export class JenkinsClient {
     try {
       const fullLog = await httpGetText(
         `${this.baseUrl}/job/${jobPath(jobName)}/${bn}/consoleText`,
-        { headers: this.headers() },
+        this.req(),
       )
       const snippet = fullLog
         .trim()
@@ -287,7 +313,7 @@ export class JenkinsClient {
     if (this.crumb) return this.crumb
     try {
       const controller = new AbortController()
-      const t = setTimeout(() => controller.abort(), 10000)
+      const t = setTimeout(() => controller.abort(), this.timeoutMs)
       let res: Response
       try {
         res = await fetch(`${this.baseUrl}/crumbIssuer/api/json`, {
@@ -353,7 +379,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=artifacts[fileName,relativePath]`,
-        { headers: this.headers() },
+        this.req(),
       )
       if (!data || !Array.isArray(data.artifacts)) return []
       return data.artifacts.map((a: any) => ({
@@ -379,7 +405,7 @@ export class JenkinsClient {
   }> {
     const url = `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/artifact/${relativePath}`
     try {
-      const data = await httpGetText(url, { headers: this.headers() })
+      const data = await httpGetText(url, this.req())
       const buf = Buffer.from(data, "utf8")
       return {
         fileName: relativePath.split("/").pop() || relativePath,
@@ -416,7 +442,7 @@ export class JenkinsClient {
     try {
       await httpPost(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/stop`,
-        { headers },
+        { headers, timeoutMs: this.timeoutMs },
       )
       return { jobName, buildNumber, stopped: true }
     } catch (e: any) {
@@ -437,7 +463,7 @@ export class JenkinsClient {
     try {
       await httpPost(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/doDelete`,
-        { headers },
+        { headers, timeoutMs: this.timeoutMs },
       )
       return { jobName, buildNumber, deleted: true }
     } catch (e: any) {
@@ -451,7 +477,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/testReport/api/json`,
-        { headers: this.headers() },
+        this.req(),
       )
       return {
         jobName,
@@ -482,9 +508,7 @@ export class JenkinsClient {
   // Get build queue
   async getQueue(): Promise<any[]> {
     try {
-      const data = await httpGetJson<any>(`${this.baseUrl}/queue/api/json`, {
-        headers: this.headers(),
-      })
+      const data = await httpGetJson<any>(`${this.baseUrl}/queue/api/json`, this.req())
       if (!data.items) return []
       return data.items.map((item: any) => ({
         id: item.id,
@@ -587,7 +611,7 @@ export class JenkinsClient {
     try {
       const config = await httpGetText(
         `${this.baseUrl}/job/${jobPath(jobName)}/config.xml`,
-        { headers: this.headers() },
+        this.req(),
       )
       return { jobName, config }
     } catch (e: any) {
@@ -610,7 +634,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]`,
-        { headers: this.headers() },
+        this.req(),
       )
       const paramProp = (data.property ?? []).find(
         (p: any) =>
@@ -645,7 +669,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/computer/api/json?depth=1`,
-        { headers: this.headers() },
+        this.req(),
       )
       if (!data.computer) return []
       return data.computer.map((node: any) => ({
@@ -669,9 +693,7 @@ export class JenkinsClient {
   // Get system info
   async getSystemInfo(): Promise<any> {
     try {
-      const data = await httpGetJson<any>(`${this.baseUrl}/api/json`, {
-        headers: this.headers(),
-      })
+      const data = await httpGetJson<any>(`${this.baseUrl}/api/json`, this.req())
       return {
         nodeDescription: data.nodeDescription || "",
         nodeName: data.nodeName || "",
@@ -689,13 +711,18 @@ export class JenkinsClient {
   // Get Jenkins version
   async getVersion(): Promise<{ version: string }> {
     try {
+      // The one request that had no deadline at all, so a Jenkins that never
+      // answered hung the caller indefinitely rather than timing out.
       const res = await fetch(`${this.baseUrl}/api/json`, {
         method: "HEAD",
         headers: this.headers(),
+        signal: AbortSignal.timeout(this.timeoutMs),
       })
       const version = res.headers.get("x-jenkins") || "unknown"
       return { version }
     } catch (e: any) {
+      if (e.name === "AbortError" || e.name === "TimeoutError")
+        throw Errors.timeout()
       throw e
     }
   }
@@ -705,7 +732,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/pluginManager/api/json?depth=1`,
-        { headers: this.headers() },
+        this.req(),
       )
       if (!data.plugins) return []
       return data.plugins.map((plugin: any) => ({
@@ -726,7 +753,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=changeSet[items[author[fullName],msg,commitId,timestamp]]`,
-        { headers: this.headers() },
+        this.req(),
       )
       if (!data.changeSet || !data.changeSet.items) {
         return { jobName, buildNumber, changes: [] }
@@ -754,7 +781,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/wfapi/describe`,
-        { headers: this.headers() },
+        this.req(),
       )
       return {
         jobName,
@@ -830,7 +857,7 @@ export class JenkinsClient {
     try {
       await httpPost(
         `${this.baseUrl}/job/${jobPath(jobName)}/rename?newName=${encodeURIComponent(newName)}`,
-        { headers },
+        { headers, timeoutMs: this.timeoutMs },
       )
       return { oldName: jobName, newName, renamed: true }
     } catch (e: any) {
@@ -858,7 +885,7 @@ export class JenkinsClient {
       // fails only on one instance as a candidate for version sensitivity here.
       const res = await httpPost(
         `${createItemUrl(this.baseUrl, newName)}&from=${encodeURIComponent(`/${sourceFullName}`)}&mode=copy`,
-        { headers },
+        { headers, timeoutMs: this.timeoutMs },
       )
       if (res.status >= 400)
         throw Errors.unexpected(`Copy job failed: HTTP ${res.status}`)
@@ -873,7 +900,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/computer/${encodeURIComponent(nodeName)}/api/json?depth=1`,
-        { headers: this.headers() },
+        this.req(),
       )
       return {
         name: data.displayName || nodeName,
@@ -902,7 +929,7 @@ export class JenkinsClient {
     try {
       await httpPost(
         `${this.baseUrl}/computer/${encodeURIComponent(nodeName)}/toggleOffline?offlineMessage=${encodeURIComponent(offlineMessage)}`,
-        { headers },
+        { headers, timeoutMs: this.timeoutMs },
       )
       return { nodeName, toggledOffline: true }
     } catch (e: any) {
@@ -917,7 +944,7 @@ export class JenkinsClient {
   > {
     const data = await httpGetJson<any>(
       `${this.baseUrl}/api/json?tree=views[name,url,jobs[name,url]]`,
-      { headers: this.headers() },
+      this.req(),
     )
     if (!Array.isArray(data.views)) return []
     return data.views.map((v: any) => ({
@@ -931,7 +958,7 @@ export class JenkinsClient {
     try {
       const data = await httpGetJson<any>(
         `${this.baseUrl}/view/${encodeURIComponent(viewName)}/api/json`,
-        { headers: this.headers() },
+        this.req(),
       )
       return {
         name: data.name || viewName,
@@ -957,7 +984,7 @@ export class JenkinsClient {
     const url = reason
       ? `${this.baseUrl}/quietDown?reason=${encodeURIComponent(reason)}`
       : `${this.baseUrl}/quietDown`
-    await httpPost(url, { headers })
+    await httpPost(url, { headers, timeoutMs: this.timeoutMs })
     return { quietingDown: true }
   }
 
@@ -965,7 +992,7 @@ export class JenkinsClient {
     const crumb = await this.ensureCrumb()
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
-    await httpPost(`${this.baseUrl}/cancelQuietDown`, { headers })
+    await httpPost(`${this.baseUrl}/cancelQuietDown`, { headers, timeoutMs: this.timeoutMs })
     return { quietingDown: false }
   }
 
@@ -973,7 +1000,7 @@ export class JenkinsClient {
     const crumb = await this.ensureCrumb()
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
-    await httpPost(`${this.baseUrl}/safeRestart`, { headers })
+    await httpPost(`${this.baseUrl}/safeRestart`, { headers, timeoutMs: this.timeoutMs })
     return { restarting: true }
   }
 
@@ -991,7 +1018,10 @@ export class JenkinsClient {
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
 
-    const init: RequestInit & { timeoutMs?: number } = { headers }
+    const init: RequestInit & { timeoutMs?: number } = {
+      headers,
+      timeoutMs: this.timeoutMs,
+    }
     if (mainScript !== undefined) {
       headers["Content-Type"] = "application/x-www-form-urlencoded"
       init.body = new URLSearchParams({ mainScript }).toString()

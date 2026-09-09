@@ -3,6 +3,7 @@ import {
   loadToolFilter,
   loadAllJenkinsInstances,
 } from "../../src/common/env.js"
+import { DEFAULT_TIMEOUT_MS } from "../../src/common/http.js"
 
 describe("loadToolFilter", () => {
   afterEach(() => {
@@ -232,5 +233,77 @@ describe("loadAllJenkinsInstances — 2-tier priority", () => {
     const instances = loadAllJenkinsInstances({ jenkinsAnonymous: true })
     const env = instances.values().next().value
     expect(env.JENKINS_ANONYMOUS).toBe(true)
+  })
+})
+
+describe("loadAllJenkinsInstances — request timeout", () => {
+  const cleanEnv = () => {
+    delete process.env["MCP_JENKINS_URL"]
+    delete process.env["MCP_JENKINS_USER"]
+    delete process.env["MCP_JENKINS_API_TOKEN"]
+    delete process.env["MCP_JENKINS_INSTANCES"]
+    delete process.env["MCP_JENKINS_TIMEOUT_MS"]
+  }
+
+  beforeEach(cleanEnv)
+  afterEach(cleanEnv)
+
+  const withCreds = () => {
+    process.env["MCP_JENKINS_URL"] = "https://jenkins.example.com"
+    process.env["MCP_JENKINS_USER"] = "admin"
+    process.env["MCP_JENKINS_API_TOKEN"] = "mytoken"
+  }
+
+  // Pins the contract as it stood before the option existed: an install that
+  // sets nothing keeps the 10 s deadline it has always had.
+  it("defaults to 10 s when nothing is configured", () => {
+    withCreds()
+    const env = loadAllJenkinsInstances({}).values().next().value
+    expect(env.JENKINS_TIMEOUT_MS).toBe(DEFAULT_TIMEOUT_MS)
+    expect(env.JENKINS_TIMEOUT_MS).toBe(10000)
+  })
+
+  it("reads MCP_JENKINS_TIMEOUT_MS", () => {
+    withCreds()
+    process.env["MCP_JENKINS_TIMEOUT_MS"] = "45000"
+    const env = loadAllJenkinsInstances({}).values().next().value
+    expect(env.JENKINS_TIMEOUT_MS).toBe(45000)
+  })
+
+  it("lets --timeout-ms win over the env var", () => {
+    withCreds()
+    process.env["MCP_JENKINS_TIMEOUT_MS"] = "45000"
+    const env = loadAllJenkinsInstances({ jenkinsTimeoutMs: "60000" })
+      .values()
+      .next().value
+    expect(env.JENKINS_TIMEOUT_MS).toBe(60000)
+  })
+
+  it("applies one deadline to every configured instance", () => {
+    process.env["MCP_JENKINS_URL"] =
+      "https://one.example.com,https://two.example.com"
+    process.env["MCP_JENKINS_USER"] = "admin,admin"
+    process.env["MCP_JENKINS_API_TOKEN"] = "t1,t2"
+    process.env["MCP_JENKINS_TIMEOUT_MS"] = "30000"
+    const instances = loadAllJenkinsInstances({})
+    expect([...instances.values()].map((e) => e.JENKINS_TIMEOUT_MS)).toEqual([
+      30000, 30000,
+    ])
+  })
+
+  it.each(["0", "-1", "abc", "1.5"])(
+    "rejects %s rather than falling back silently",
+    (raw) => {
+      withCreds()
+      process.env["MCP_JENKINS_TIMEOUT_MS"] = raw
+      expect(() => loadAllJenkinsInstances({})).toThrow(/positive whole number/)
+    },
+  )
+
+  it("treats an empty value as unset", () => {
+    withCreds()
+    process.env["MCP_JENKINS_TIMEOUT_MS"] = ""
+    const env = loadAllJenkinsInstances({}).values().next().value
+    expect(env.JENKINS_TIMEOUT_MS).toBe(DEFAULT_TIMEOUT_MS)
   })
 })

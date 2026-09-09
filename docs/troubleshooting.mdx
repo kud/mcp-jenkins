@@ -19,6 +19,24 @@ curl -u username:token https://your-jenkins.com/api/json
 
 If this returns JSON, your credentials are valid!
 
+## ⏱️ "Jenkins request timed out"
+
+That message comes from **this server**, not from Jenkins — every request is bounded by a 10-second deadline, and a large or busy instance can take longer than that to answer a single call. Nothing was refused; the server stopped waiting.
+
+Time the call yourself to see what your instance actually needs:
+
+```bash
+time curl -u username:token https://your-jenkins.com/job/my-job/api/json
+```
+
+If that sits comfortably over 10 seconds, raise the deadline past it:
+
+```bash
+export MCP_JENKINS_TIMEOUT_MS="30000"
+```
+
+See [Configuration](/projects/mcp-jenkins/docs/configuration) for the CLI equivalent.
+
 ## 🔨 Build Errors
 
 ```bash

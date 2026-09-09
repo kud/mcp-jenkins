@@ -12,12 +12,30 @@ The server uses a **2-tier priority system** for configuration (highest to lowes
    - `--user <username>` - Username for Basic auth
    - `--api-token <token>` - API token for Basic auth
    - `--bearer-token <token>` - Bearer token for OAuth/token auth
+   - `--timeout-ms <ms>` - Per-request deadline
 
 2. **`MCP_JENKINS_*` Environment Variables**
    - `MCP_JENKINS_URL`
    - `MCP_JENKINS_USER`
    - `MCP_JENKINS_API_TOKEN`
    - `MCP_JENKINS_BEARER_TOKEN`
+   - `MCP_JENKINS_TIMEOUT_MS`
+
+## ⏱️ Request Timeout
+
+Every request the server makes is bounded by one deadline, **10 000 ms** by default. It is the server that gives up, not Jenkins — so a slow instance surfaces as `Jenkins request timed out` even though nothing was refused.
+
+```bash
+export MCP_JENKINS_TIMEOUT_MS="30000"
+```
+
+Or as a CLI argument:
+
+```bash
+mcp-jenkins --url https://pipeline.yourcompany.com --bearer-token abc123 --timeout-ms 30000
+```
+
+The value is a positive whole number of milliseconds; anything else is rejected at startup rather than silently falling back. Unlike the credentials below, **one deadline applies to every configured instance** — it is not comma-separated per instance.
 
 ## 🔀 Multiple Instances
 
