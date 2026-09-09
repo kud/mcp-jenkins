@@ -167,6 +167,7 @@ export const rawTools: Tool[] = [
           type: "number",
           description: "Maximum number of builds to return (default: 5)",
           default: 5,
+          minimum: 1,
         },
       },
       required: ["jobName"],
