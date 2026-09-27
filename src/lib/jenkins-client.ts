@@ -343,6 +343,12 @@ export class JenkinsClient {
     }
   }
 
+  private async reissueCrumb(): Promise<CrumbInfo | undefined> {
+    this.crumb = undefined
+    this.cookies = undefined
+    return this.ensureCrumb()
+  }
+
   async triggerBuild(
     jobName: string,
     params?: Record<string, any>,
@@ -361,7 +367,31 @@ export class JenkinsClient {
       headers["Content-Type"] = "application/x-www-form-urlencoded"
     }
     try {
-      const res = await httpPost(url, { headers, body })
+      let res = await httpPost(url, {
+        headers,
+        body,
+        timeoutMs: this.timeoutMs,
+      })
+      // A crumb is bound to the web session it was issued with. Once Jenkins
+      // expires that session, every POST carrying the cached crumb and cookie is
+      // refused with 403 while reads keep working, so the client looked healthy
+      // and only triggers failed, silently. Re-issue the crumb once and retry.
+      // Issue #19.
+      if (res.status === 403 && crumb) {
+        const fresh = await this.reissueCrumb()
+        const retryHeaders: Record<string, string> = this.headers()
+        if (fresh) retryHeaders[fresh.crumbRequestField] = fresh.crumb
+        if (headers["Content-Type"])
+          retryHeaders["Content-Type"] = headers["Content-Type"]
+        res = await httpPost(url, {
+          headers: retryHeaders,
+          body,
+          timeoutMs: this.timeoutMs,
+        })
+      }
+      if (res.status === 404) throw Errors.jobNotFound(jobName)
+      if (res.status >= 400)
+        throw Errors.unexpected(`Trigger build failed: HTTP ${res.status}`)
       const queueUrl = res.headers["location"] || null
       return { jobName, queueUrl }
     } catch (e: any) {
@@ -508,7 +538,10 @@ export class JenkinsClient {
   // Get build queue
   async getQueue(): Promise<any[]> {
     try {
-      const data = await httpGetJson<any>(`${this.baseUrl}/queue/api/json`, this.req())
+      const data = await httpGetJson<any>(
+        `${this.baseUrl}/queue/api/json`,
+        this.req(),
+      )
       if (!data.items) return []
       return data.items.map((item: any) => ({
         id: item.id,
@@ -693,7 +726,10 @@ export class JenkinsClient {
   // Get system info
   async getSystemInfo(): Promise<any> {
     try {
-      const data = await httpGetJson<any>(`${this.baseUrl}/api/json`, this.req())
+      const data = await httpGetJson<any>(
+        `${this.baseUrl}/api/json`,
+        this.req(),
+      )
       return {
         nodeDescription: data.nodeDescription || "",
         nodeName: data.nodeName || "",
@@ -992,7 +1028,10 @@ export class JenkinsClient {
     const crumb = await this.ensureCrumb()
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
-    await httpPost(`${this.baseUrl}/cancelQuietDown`, { headers, timeoutMs: this.timeoutMs })
+    await httpPost(`${this.baseUrl}/cancelQuietDown`, {
+      headers,
+      timeoutMs: this.timeoutMs,
+    })
     return { quietingDown: false }
   }
 
@@ -1000,7 +1039,10 @@ export class JenkinsClient {
     const crumb = await this.ensureCrumb()
     const headers: Record<string, string> = this.headers()
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
-    await httpPost(`${this.baseUrl}/safeRestart`, { headers, timeoutMs: this.timeoutMs })
+    await httpPost(`${this.baseUrl}/safeRestart`, {
+      headers,
+      timeoutMs: this.timeoutMs,
+    })
     return { restarting: true }
   }
 
