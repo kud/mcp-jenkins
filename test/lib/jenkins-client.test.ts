@@ -479,6 +479,66 @@ describe("JenkinsClient", () => {
       )
     })
 
+    it("re-issues the crumb and retries once when the cached session goes stale", async () => {
+      vi.mocked(fetch)
+        .mockReturnValueOnce(
+          mockFetchResponse(
+            { crumbRequestField: "Jenkins-Crumb", crumb: "old" },
+            "JSESSIONID=old; Path=/",
+          ),
+        )
+        .mockReturnValueOnce(
+          mockFetchResponse(
+            { crumbRequestField: "Jenkins-Crumb", crumb: "new" },
+            "JSESSIONID=new; Path=/",
+          ),
+        )
+      vi.mocked(common.httpPost)
+        .mockResolvedValueOnce({
+          status: 201,
+          headers: { location: "https://jenkins.example.com/queue/item/1/" },
+        })
+        .mockResolvedValueOnce({ status: 403, headers: {} })
+        .mockResolvedValueOnce({
+          status: 201,
+          headers: { location: "https://jenkins.example.com/queue/item/2/" },
+        })
+
+      await client.triggerBuild("my-job")
+      const result = await client.triggerBuild("my-job", { branch: "main" })
+
+      expect(result.queueUrl).toBe("https://jenkins.example.com/queue/item/2/")
+      expect(fetch).toHaveBeenCalledTimes(2)
+      const retry = vi.mocked(common.httpPost).mock.calls[2][1] as any
+      expect(retry.headers["Jenkins-Crumb"]).toBe("new")
+      expect(retry.headers.Cookie).toBe("JSESSIONID=new")
+      expect(retry.headers["Content-Type"]).toBe(
+        "application/x-www-form-urlencoded",
+      )
+      expect(retry.body).toBe("branch=main")
+    })
+
+    it("throws instead of returning a null queueUrl when Jenkins refuses the trigger", async () => {
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 403, headers: {} })
+
+      await expect(client.triggerBuild("my-job")).rejects.toThrow("HTTP 403")
+      expect(common.httpPost).toHaveBeenCalledTimes(2)
+    })
+
+    it("maps a 404 trigger response to job not found", async () => {
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 404, headers: {} })
+
+      await expect(client.triggerBuild("missing")).rejects.toThrow(
+        "Job not found: missing",
+      )
+    })
+
     it("captures Set-Cookie from crumb fetch and injects Cookie on POST", async () => {
       const mockCrumb = {
         crumbRequestField: "Jenkins-Crumb",
