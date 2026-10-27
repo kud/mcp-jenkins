@@ -39,6 +39,8 @@ vi.mock("../../src/common/index.js", () => {
     Errors: {
       authFailed: () => new Error("Authentication failed"),
       jobNotFound: (job: string) => new Error(`Job not found: ${job}`),
+      buildNotFound: (job: string, build: number) =>
+        new Error(`Build ${build} not found for job ${job}`),
       artifactNotFound: (path: string) =>
         new Error(`Artifact not found: ${path}`),
       invalidInput: (msg: string) => new Error(msg),
@@ -563,6 +565,179 @@ describe("JenkinsClient", () => {
         }),
       )
     })
+
+    it("returns the queue URL from a 201 response with a Location header", async () => {
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
+        headers: { location: "https://jenkins.example.com/queue/item/7/" },
+      })
+
+      await expect(client.triggerBuild("my-job")).resolves.toEqual({
+        jobName: "my-job",
+        queueUrl: "https://jenkins.example.com/queue/item/7/",
+      })
+    })
+
+    // fetch follows redirects by default, which turns an authentication
+    // redirect into a 200 HTML page that reads as a queued build. The trigger
+    // POSTs must ask not to follow so the redirect itself surfaces.
+    it("sends the trigger POST asking not to follow redirects", async () => {
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
+        headers: { location: "https://jenkins.example.com/queue/item/8/" },
+      })
+
+      await client.triggerBuild("my-job", { branch: "main" })
+
+      for (const call of vi.mocked(common.httpPost).mock.calls) {
+        expect(call[1]).toMatchObject({ redirect: "manual" })
+      }
+    })
+
+    it("rejects a 2xx trigger response with no queue Location header", async () => {
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 200, headers: {} })
+
+      const err = await client
+        .triggerBuild("my-job")
+        .then(
+          () => null,
+          (e) => e as Error,
+        )
+
+      expect(err).toBeTruthy()
+      expect(err?.message).toContain("HTTP 200")
+      expect(err?.message).toContain(
+        "https://jenkins.example.com/job/my-job/build",
+      )
+    })
+
+    it("rejects a redirect trigger response instead of following it", async () => {
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 302,
+        headers: { location: "https://jenkins.example.com/login" },
+      })
+
+      await expect(client.triggerBuild("my-job")).rejects.toThrow(
+        "Trigger build failed: HTTP 302 for https://jenkins.example.com/job/my-job/build (redirects to https://jenkins.example.com/login; not followed)",
+      )
+      expect(common.httpPost).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe("per-build 404s", () => {
+    // The block below needs exact call sequences, and mock implementations
+    // (including queued once-return values) survive clearAllMocks, so leaked
+    // 404s from a previous test corrupt the next one. Reset the three HTTP
+    // mocks entering and leaving this block; every test here sets its own.
+    const resetHttpMocks = () => {
+      vi.mocked(common.httpGetJson).mockReset()
+      vi.mocked(common.httpGetText).mockReset()
+      vi.mocked(common.httpPost).mockReset()
+    }
+    beforeEach(resetHttpMocks)
+    afterEach(resetHttpMocks)
+
+    // A 404 on a build URL maps to the thing actually missing: the job probe
+    // (second httpGetJson) decides between "job gone" and "build gone".
+    it("getBuild reports build not found when the job exists", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockRejectedValueOnce(new Error("HTTP 404")) // build record
+        .mockResolvedValueOnce({ name: "my-job" }) // job probe
+      await expect(client.getBuild("my-job", 99)).rejects.toThrow(
+        "Build 99 not found for job my-job",
+      )
+    })
+
+    it("getBuild still reports job not found when the job is gone too", async () => {
+      vi.mocked(common.httpGetJson).mockRejectedValue(new Error("HTTP 404"))
+      await expect(client.getBuild("gone", 1)).rejects.toThrow(
+        "Job not found: gone",
+      )
+    })
+
+    it("getConsoleLog reports a missing build", async () => {
+      vi.mocked(common.httpGetText).mockRejectedValueOnce(
+        new Error("HTTP 404"),
+      )
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({ name: "my-job" })
+      await expect(client.getConsoleLog("my-job", 12)).rejects.toThrow(
+        "Build 12 not found for job my-job",
+      )
+    })
+
+    it("listArtifacts reports a missing build", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockRejectedValueOnce(new Error("HTTP 404"))
+        .mockResolvedValueOnce({ name: "my-job" })
+      await expect(client.listArtifacts("my-job", 44)).rejects.toThrow(
+        "Build 44 not found for job my-job",
+      )
+    })
+
+    it("stopBuild reports a missing build", async () => {
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 404, headers: {} })
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({ name: "my-job" })
+      await expect(client.stopBuild("my-job", 77)).rejects.toThrow(
+        "Build 77 not found for job my-job",
+      )
+    })
+
+    // Artifact and sub-resource URLs can 404 with the build still there; the
+    // existing per-target behaviour must survive that case.
+    it("getArtifact keeps artifact not found when the build exists", async () => {
+      vi.mocked(common.httpGetText).mockRejectedValueOnce(
+        new Error("HTTP 404"),
+      )
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({ number: 5 })
+      await expect(
+        client.getArtifact("my-job", 5, "build/app.jar"),
+      ).rejects.toThrow("Artifact not found: build/app.jar")
+    })
+
+    it("getArtifact reports build not found when the build is gone", async () => {
+      vi.mocked(common.httpGetText).mockRejectedValueOnce(
+        new Error("HTTP 404"),
+      )
+      vi.mocked(common.httpGetJson)
+        .mockRejectedValueOnce(new Error("HTTP 404")) // build probe
+        .mockResolvedValueOnce({ name: "my-job" }) // job probe
+      await expect(
+        client.getArtifact("my-job", 5, "build/app.jar"),
+      ).rejects.toThrow("Build 5 not found for job my-job")
+    })
+
+    it("getTestResults throws build not found when the build is gone", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockRejectedValueOnce(new Error("HTTP 404")) // testReport
+        .mockRejectedValueOnce(new Error("HTTP 404")) // build probe
+        .mockResolvedValueOnce({ name: "my-job" }) // job probe
+      await expect(client.getTestResults("my-job", 10)).rejects.toThrow(
+        "Build 10 not found for job my-job",
+      )
+    })
+
+    it("getPipelineStages keeps the graceful shape when the build exists", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockRejectedValueOnce(new Error("HTTP 404")) // wfapi
+        .mockResolvedValueOnce({ number: 10 }) // build probe
+      await expect(client.getPipelineStages("my-job", 10)).resolves.toEqual({
+        jobName: "my-job",
+        buildNumber: 10,
+        message: "Not a pipeline build or workflow API not available",
+      })
+    })
   })
 
   describe("listArtifacts", () => {
@@ -699,7 +874,11 @@ describe("JenkinsClient", () => {
     })
 
     it("should handle missing test results", async () => {
-      vi.mocked(common.httpGetJson).mockRejectedValue(new Error("HTTP 404"))
+      // Build 404s on the test report, then the probe confirms the build
+      // exists, so a missing report stays a graceful empty result.
+      vi.mocked(common.httpGetJson)
+        .mockRejectedValueOnce(new Error("HTTP 404"))
+        .mockResolvedValueOnce({ number: 10 })
 
       const result = await client.getTestResults("my-job", 10)
 
@@ -1106,13 +1285,30 @@ describe("JenkinsClient", () => {
       expect(result.queueUrl).toBeNull()
     })
 
-    it("should throw job not found error on 404", async () => {
+    it("reports build not found on 404 when the job still exists", async () => {
       const mockCrumb = {
         crumbRequestField: "Jenkins-Crumb",
         crumb: "replay404",
       }
       vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({ status: 404, headers: {} })
+      vi.mocked(common.httpGetJson).mockResolvedValue({
+        name: "missing-pipeline",
+      })
+
+      await expect(client.replayBuild("missing-pipeline", 1)).rejects.toThrow(
+        "Build 1 not found for job missing-pipeline",
+      )
+    })
+
+    it("reports job not found on 404 when the job is gone too", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "replay404job",
+      }
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 404, headers: {} })
+      vi.mocked(common.httpGetJson).mockRejectedValue(new Error("HTTP 404"))
 
       await expect(client.replayBuild("missing-pipeline", 1)).rejects.toThrow(
         "Job not found: missing-pipeline",

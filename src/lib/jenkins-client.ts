@@ -274,7 +274,8 @@ export class JenkinsClient {
       )
       return this.normalizeBuild(raw)
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      if (e.message?.includes("HTTP 404"))
+        throw await this.buildNotFoundError(jobName, buildNumber)
       throw e
     }
   }
@@ -304,7 +305,8 @@ export class JenkinsClient {
         .replace(/\r/g, "")
       return { jobName, buildNumber: bn, logSnippet: snippet, fullLog }
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      if (e.message?.includes("HTTP 404"))
+        throw await this.buildNotFoundError(jobName, bn)
       throw e
     }
   }
@@ -349,6 +351,49 @@ export class JenkinsClient {
     return this.ensureCrumb()
   }
 
+  // A 404 on a URL carrying the build number means the job is gone or the
+  // build is gone; the response alone cannot tell which. One cheap read of the
+  // job record disambiguates it, so the error names the thing actually missing
+  // rather than calling a missing build "Job not found".
+  private async buildNotFoundError(
+    jobName: string,
+    buildNumber: number,
+  ): Promise<McpError> {
+    try {
+      await httpGetJson(
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=name`,
+        this.req(),
+      )
+      return Errors.buildNotFound(jobName, buildNumber)
+    } catch (e: any) {
+      if (e.message?.includes("HTTP 404")) return Errors.jobNotFound(jobName)
+      throw e
+    }
+  }
+
+  // A 404 on a build sub-resource (testReport, wfapi, artifact/…) can also mean
+  // the build exists and only the sub-resource is missing. Reading the build
+  // record once separates those cases: when the build is gone this resolves to
+  // the job/build error above; when it is there, null hands the decision back
+  // to the caller's fallback (that missing stage data or artifact is not an
+  // error in the same sense).
+  private async subResource404Error(
+    jobName: string,
+    buildNumber: number,
+  ): Promise<McpError | null> {
+    try {
+      await httpGetJson<any>(
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=number`,
+        this.req(),
+      )
+      return null
+    } catch (e: any) {
+      if (e.message?.includes("HTTP 404"))
+        return this.buildNotFoundError(jobName, buildNumber)
+      throw e
+    }
+  }
+
   async triggerBuild(
     jobName: string,
     params?: Record<string, any>,
@@ -367,10 +412,16 @@ export class JenkinsClient {
       headers["Content-Type"] = "application/x-www-form-urlencoded"
     }
     try {
+      // Triggers are the one request where a followed redirect lies: a real
+      // queueing trigger answers 201 + Location, while an authentication
+      // redirect lands on a 200 HTML page that reads as success with a null
+      // queueUrl. Following is disabled only on these two trigger POSTs so the
+      // 3xx itself surfaces; other POST callers keep fetch's default.
       let res = await httpPost(url, {
         headers,
         body,
         timeoutMs: this.timeoutMs,
+        redirect: "manual",
       })
       // A crumb is bound to the web session it was issued with. Once Jenkins
       // expires that session, every POST carrying the cached crumb and cookie is
@@ -387,12 +438,22 @@ export class JenkinsClient {
           headers: retryHeaders,
           body,
           timeoutMs: this.timeoutMs,
+          redirect: "manual",
         })
       }
       if (res.status === 404) throw Errors.jobNotFound(jobName)
-      if (res.status >= 400)
-        throw Errors.unexpected(`Trigger build failed: HTTP ${res.status}`)
+      if (res.status >= 300) {
+        const redirect = res.headers["location"]
+        throw Errors.unexpected(
+          `Trigger build failed: HTTP ${res.status} for ${url}` +
+            (redirect ? ` (redirects to ${redirect}; not followed)` : ""),
+        )
+      }
       const queueUrl = res.headers["location"] || null
+      if (!queueUrl)
+        throw Errors.unexpected(
+          `Trigger build returned HTTP ${res.status} without a queue Location header for ${url}`,
+        )
       return { jobName, queueUrl }
     } catch (e: any) {
       if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
@@ -418,7 +479,8 @@ export class JenkinsClient {
         url: `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/artifact/${a.relativePath}`,
       }))
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      if (e.message?.includes("HTTP 404"))
+        throw await this.buildNotFoundError(jobName, buildNumber)
       throw e
     }
   }
@@ -444,8 +506,11 @@ export class JenkinsClient {
         base64: buf.toString("base64"),
       }
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404"))
+      if (e.message?.includes("HTTP 404")) {
+        const err = await this.subResource404Error(jobName, buildNumber)
+        if (err) throw err
         throw Errors.artifactNotFound(relativePath)
+      }
       throw e
     }
   }
@@ -470,13 +535,21 @@ export class JenkinsClient {
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
 
     try {
-      await httpPost(
+      // httpPost resolves with the status rather than throwing on 4xx/5xx, so
+      // the catch below only guards transport errors; the result has to be
+      // classified here or every failed stop was reported as stopped.
+      const res = await httpPost(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/stop`,
         { headers, timeoutMs: this.timeoutMs },
       )
+      if (res.status === 404)
+        throw await this.buildNotFoundError(jobName, buildNumber)
+      if (res.status >= 400)
+        throw Errors.unexpected(`Stop build failed: HTTP ${res.status}`)
       return { jobName, buildNumber, stopped: true }
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      if (e.message?.includes("HTTP 404"))
+        throw await this.buildNotFoundError(jobName, buildNumber)
       throw e
     }
   }
@@ -491,13 +564,20 @@ export class JenkinsClient {
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
 
     try {
-      await httpPost(
+      // Same as stopBuild: httpPost resolves with the status, so the catch
+      // below only guards transport errors and the result is classified here.
+      const res = await httpPost(
         `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/doDelete`,
         { headers, timeoutMs: this.timeoutMs },
       )
+      if (res.status === 404)
+        throw await this.buildNotFoundError(jobName, buildNumber)
+      if (res.status >= 400)
+        throw Errors.unexpected(`Delete build failed: HTTP ${res.status}`)
       return { jobName, buildNumber, deleted: true }
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      if (e.message?.includes("HTTP 404"))
+        throw await this.buildNotFoundError(jobName, buildNumber)
       throw e
     }
   }
@@ -521,6 +601,8 @@ export class JenkinsClient {
       }
     } catch (e: any) {
       if (e.message?.includes("HTTP 404")) {
+        const err = await this.subResource404Error(jobName, buildNumber)
+        if (err) throw err
         return {
           jobName,
           buildNumber,
@@ -807,7 +889,8 @@ export class JenkinsClient {
         })),
       }
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      if (e.message?.includes("HTTP 404"))
+        throw await this.buildNotFoundError(jobName, buildNumber)
       throw e
     }
   }
@@ -834,6 +917,8 @@ export class JenkinsClient {
       }
     } catch (e: any) {
       if (e.message?.includes("HTTP 404")) {
+        const err = await this.subResource404Error(jobName, buildNumber)
+        if (err) throw err
         return {
           jobName,
           buildNumber,
@@ -1072,7 +1157,8 @@ export class JenkinsClient {
       `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/replay/rebuild`,
       init,
     )
-    if (res.status === 404) throw Errors.jobNotFound(jobName)
+    if (res.status === 404)
+      throw await this.buildNotFoundError(jobName, buildNumber)
     if (res.status >= 400)
       throw Errors.unexpected(`Replay failed with status ${res.status}`)
     return { jobName, buildNumber, queueUrl: res.headers["location"] || null }

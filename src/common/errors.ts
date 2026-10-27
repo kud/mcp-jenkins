@@ -17,6 +17,12 @@ export const Errors = {
     ),
   jobNotFound: (job: string) =>
     new McpError("JOB_NOT_FOUND", `Job not found: ${job}`, 404),
+  buildNotFound: (job: string, build: number) =>
+    new McpError(
+      "BUILD_NOT_FOUND",
+      `Build ${build} not found for job ${job}`,
+      404,
+    ),
   timeout: () => new McpError("TIMEOUT", "Jenkins request timed out.", 504),
   artifactNotFound: (path: string) =>
     new McpError("ARTIFACT_NOT_FOUND", `Artifact not found: ${path}`, 404),
