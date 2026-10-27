@@ -56,11 +56,11 @@ describe("replayBuild tool", () => {
     expect(result).toEqual(mockResponse)
   })
 
-  it("should return null queueUrl when Jenkins does not supply a Location header", async () => {
+  it("should return the queueUrl the client reports", async () => {
     vi.mocked(mockClient.replayBuild).mockResolvedValue({
       jobName: "my-pipeline",
       buildNumber: 1,
-      queueUrl: null,
+      queueUrl: "https://jenkins.example.com/queue/item/123/",
     })
 
     const result = await replayBuild(mockClient, {
@@ -68,7 +68,21 @@ describe("replayBuild tool", () => {
       buildNumber: 1,
     })
 
-    expect(result.queueUrl).toBeNull()
+    expect(result.queueUrl).toBe(
+      "https://jenkins.example.com/queue/item/123/",
+    )
+  })
+
+  it("should propagate a missing Location header error from the client", async () => {
+    vi.mocked(mockClient.replayBuild).mockRejectedValue(
+      new Error(
+        "Replay returned HTTP 201 without a queue Location header for https://jenkins.example.com/job/my-pipeline/1/replay/rebuild",
+      ),
+    )
+
+    await expect(
+      replayBuild(mockClient, { jobName: "my-pipeline", buildNumber: 1 }),
+    ).rejects.toThrow("without a queue Location header")
   })
 
   it("should propagate errors from the client", async () => {

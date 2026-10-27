@@ -9,6 +9,7 @@ import {
 import {
   logger,
   errorResponse,
+  guardToolResultText,
   McpError,
   loadAllJenkinsInstances,
   loadToolFilter,
@@ -199,7 +200,7 @@ Options:
   --api-token <token>    Jenkins API token (for Basic auth)
   --bearer-token <token> Jenkins bearer token (OAuth/token auth)
   --anonymous            No-auth Jenkins instance (no credentials required)
-  --timeout-ms <ms>      Per-request deadline (default 10000)
+  --timeout-ms <ms>      Per-request deadline (default 30000)
   -h, --help             Show this help message
 
 Authentication:
@@ -207,10 +208,10 @@ Authentication:
   OR use --anonymous for Jenkins instances with no authentication
 
 Slow Jenkins:
-  Every request is bounded by one deadline, 10 s by default. A large or busy
-  instance can spend longer than that answering, which surfaces as
+  Every request is bounded by one deadline, 30 s by default. A large or busy
+  instance can spend even longer answering, which surfaces as
   "Jenkins request timed out" from this server rather than an error from Jenkins.
-  Raise it with --timeout-ms 30000 or MCP_JENKINS_TIMEOUT_MS=30000.
+  Raise it with --timeout-ms 60000 or MCP_JENKINS_TIMEOUT_MS=60000.
 
 Tool Filtering (via environment variables):
   MCP_JENKINS_ALLOW_TOOLS=<tool1>,<tool2>  Allowlist — expose only these tools
@@ -236,8 +237,8 @@ Examples:
   MCP_JENKINS_BLOCK_TOOLS=jenkins_trigger_build,jenkins_stop_build,jenkins_delete_build,jenkins_cancel_queue,jenkins_enable_job,jenkins_disable_job,jenkins_delete_job,jenkins_create_job,jenkins_update_job_config,jenkins_rename_job,jenkins_copy_job,jenkins_toggle_node_offline,jenkins_quiet_down,jenkins_cancel_quiet_down,jenkins_safe_restart,jenkins_replay_build \\
   mcp-jenkins --url https://jenkins.example.com --bearer-token abc123
 
-  # Slow instance — give every request 30 s instead of 10 s
-  mcp-jenkins --url https://jenkins.example.com --bearer-token abc123 --timeout-ms 30000
+  # Slow instance: give every request 60 s instead of the 30 s default
+  mcp-jenkins --url https://jenkins.example.com --bearer-token abc123 --timeout-ms 60000
 
   # Allowlist — expose only job listing and status tools
   MCP_JENKINS_ALLOW_TOOLS=jenkins_list_jobs,jenkins_get_job_status,jenkins_get_build_status \\
@@ -327,13 +328,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              Array.from(clients.entries()).map(([instanceName, c]) => ({
-                name: instanceName,
-                url: c.baseUrl,
-              })),
-              null,
-              2,
+            text: guardToolResultText(
+              JSON.stringify(
+                Array.from(clients.entries()).map(([instanceName, c]) => ({
+                  name: instanceName,
+                  url: c.baseUrl,
+                })),
+                null,
+                2,
+              ),
             ),
           },
         ],
@@ -353,7 +356,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(result, null, 2),
+          text: guardToolResultText(JSON.stringify(result, null, 2)),
         },
       ],
     }

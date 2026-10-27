@@ -28,6 +28,10 @@ export const Errors = {
     new McpError("ARTIFACT_NOT_FOUND", `Artifact not found: ${path}`, 404),
   invalidInput: (message: string) =>
     new McpError("INVALID_INPUT", message, 400),
+  parametersRequired: (message: string) =>
+    new McpError("PARAMETERS_REQUIRED", message, 400),
+  noBuilds: (job: string) =>
+    new McpError("NO_BUILDS", `Job ${job} has no builds yet`, 404),
   unexpected: (message: string) => new McpError("UNEXPECTED", message, 500),
 }
 

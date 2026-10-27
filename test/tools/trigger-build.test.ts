@@ -21,7 +21,7 @@ describe('triggerBuild tool', () => {
 
     const result = await triggerBuild(mockClient, { jobName: 'my-job' });
 
-    expect(mockClient.triggerBuild).toHaveBeenCalledWith('my-job', undefined);
+    expect(mockClient.triggerBuild).toHaveBeenCalledWith('my-job', undefined, { useDefaults: undefined });
     expect(result).toEqual(mockResponse);
   });
 
@@ -41,7 +41,7 @@ describe('triggerBuild tool', () => {
 
     const result = await triggerBuild(mockClient, { jobName: 'my-job', params });
 
-    expect(mockClient.triggerBuild).toHaveBeenCalledWith('my-job', params);
+    expect(mockClient.triggerBuild).toHaveBeenCalledWith('my-job', params, { useDefaults: undefined });
     expect(result).toEqual(mockResponse);
   });
 
@@ -57,8 +57,30 @@ describe('triggerBuild tool', () => {
 
     const result = await triggerBuild(mockClient, { jobName: 'deploy-job', params });
 
-    expect(mockClient.triggerBuild).toHaveBeenCalledWith('deploy-job', params);
+    expect(mockClient.triggerBuild).toHaveBeenCalledWith('deploy-job', params, { useDefaults: undefined });
     expect(result.queueUrl).toBe('https://jenkins.example.com/queue/item/789/');
+  });
+
+  it('should pass useDefaults through to the client', async () => {
+    const mockResponse = {
+      jobName: 'deploy-job',
+      queueUrl: 'https://jenkins.example.com/queue/item/222/',
+    };
+
+    vi.mocked(mockClient.triggerBuild).mockResolvedValue(mockResponse);
+
+    const result = await triggerBuild(mockClient, {
+      jobName: 'deploy-job',
+      params: { REGION: 'eu-west-1' },
+      useDefaults: true,
+    });
+
+    expect(mockClient.triggerBuild).toHaveBeenCalledWith(
+      'deploy-job',
+      { REGION: 'eu-west-1' },
+      { useDefaults: true }
+    );
+    expect(result).toEqual(mockResponse);
   });
 
   it('should propagate errors from client', async () => {
@@ -81,7 +103,7 @@ describe('triggerBuild tool', () => {
 
     const result = await triggerBuild(mockClient, { jobName: 'my-job', params: {} });
 
-    expect(mockClient.triggerBuild).toHaveBeenCalledWith('my-job', {});
+    expect(mockClient.triggerBuild).toHaveBeenCalledWith('my-job', {}, { useDefaults: undefined });
     expect(result).toEqual(mockResponse);
   });
 
@@ -115,7 +137,7 @@ describe('triggerBuild tool', () => {
 
     const result = await triggerBuild(mockClient, { jobName: 'complex-job', params });
 
-    expect(mockClient.triggerBuild).toHaveBeenCalledWith('complex-job', params);
+    expect(mockClient.triggerBuild).toHaveBeenCalledWith('complex-job', params, { useDefaults: undefined });
     expect(result).toEqual(mockResponse);
   });
 });

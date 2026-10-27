@@ -24,16 +24,17 @@ vi.mock("../../src/common/index.js", () => {
     }
   }
   return {
-    DEFAULT_TIMEOUT_MS: 10000,
+    DEFAULT_TIMEOUT_MS: 30000,
     httpGetJson: vi.fn(),
     httpGetText: vi.fn(),
+    httpGetTextWithHeaders: vi.fn(),
     httpPost: vi.fn(),
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     loadJenkinsEnv: vi.fn(() => ({
       JENKINS_URL: "https://jenkins.example.com",
       JENKINS_USER: "testuser",
       JENKINS_API_TOKEN: "testtoken",
-      JENKINS_TIMEOUT_MS: 10000,
+      JENKINS_TIMEOUT_MS: 30000,
     })),
     McpError,
     Errors: {
@@ -43,7 +44,12 @@ vi.mock("../../src/common/index.js", () => {
         new Error(`Build ${build} not found for job ${job}`),
       artifactNotFound: (path: string) =>
         new Error(`Artifact not found: ${path}`),
-      invalidInput: (msg: string) => new Error(msg),
+      invalidInput: (msg: string) =>
+        new McpError("INVALID_INPUT", msg, 400),
+      parametersRequired: (msg: string) =>
+        new McpError("PARAMETERS_REQUIRED", msg, 400),
+      noBuilds: (job: string) =>
+        new McpError("NO_BUILDS", `Job ${job} has no builds yet`, 404),
       unexpected: (msg: string) => new Error(msg),
     },
   }
@@ -382,6 +388,28 @@ describe("JenkinsClient", () => {
         durationMs: 10000,
       })
     })
+
+    it("throws NO_BUILDS when the job exists but has never been built", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockRejectedValueOnce(new Error("HTTP 404")) // lastBuild
+        .mockResolvedValueOnce({ name: "fresh-job" }) // job probe
+
+      const err = await client.getLastBuild("fresh-job").then(
+        () => null,
+        (e) => e as any,
+      )
+
+      expect(err.code).toBe("NO_BUILDS")
+      expect(err.message).toBe("Job fresh-job has no builds yet")
+    })
+
+    it("keeps JOB_NOT_FOUND when the job itself is missing", async () => {
+      vi.mocked(common.httpGetJson).mockRejectedValue(new Error("HTTP 404"))
+
+      await expect(client.getLastBuild("gone-job")).rejects.toThrow(
+        "Job not found: gone-job",
+      )
+    })
   })
 
   describe("getBuild", () => {
@@ -404,41 +432,325 @@ describe("JenkinsClient", () => {
   })
 
   describe("getConsoleLog", () => {
-    it("should return console log with snippet", async () => {
-      const fullLog = "Line 1\nLine 2\nLine 3\nLine 4\n".repeat(10)
+    // The default contract: the tail of the log, never the whole thing, with
+    // truncation metadata telling the caller what was left out.
+    it("returns the last 500 lines, truncated, on a longer log", async () => {
+      const lines: string[] = []
+      for (let i = 1; i <= 600; i++) lines.push(`Line ${i}`)
+      const fullLog = lines.join("\n") + "\n"
       vi.mocked(common.httpGetText).mockResolvedValue(fullLog)
-      vi.mocked(common.httpGetJson).mockResolvedValue({
-        number: 10,
-        building: false,
-      })
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 10 })
 
-      const result = await client.getConsoleLog("my-job", 10, 50)
+      const result = await client.getConsoleLog("acme/api-gateway/PR-123", 10)
 
-      expect(result.jobName).toBe("my-job")
-      expect(result.buildNumber).toBe(10)
-      expect(result.logSnippet).toHaveLength(50)
-      expect(result.fullLog).toBe(fullLog)
+      expect(result.truncated).toBe(true)
+      expect(result.totalBytes).toBe(Buffer.byteLength(fullLog, "utf8"))
+      // startByte is a true resume offset into the full log.
+      expect(result.startByte + result.returnedBytes).toBe(result.totalBytes)
+      expect(result.text).toBe(lines.slice(100).join("\n") + "\n")
+      // The last 500 lines: the head must be gone from the returned text.
+      expect(result.text).not.toContain("Line 1\n")
+      expect(result.text).toContain("Line 101\n")
+      expect(result.text).toContain("Line 600")
     })
 
-    it("should fetch last build when buildNumber not provided", async () => {
-      const fullLog = "Console output"
-      vi.mocked(common.httpGetJson).mockResolvedValue({
+    it("cuts the byte cap at a line boundary when lines are very long", async () => {
+      // 8 lines of ~60 KB each: 500-line window is never the constraint, the
+      // 204800-byte cap is.
+      const fullLog = Array.from({ length: 8 }, (_, i) =>
+        `${i} ` + "x".repeat(60000),
+      ).join("\n")
+      vi.mocked(common.httpGetText).mockResolvedValue(fullLog)
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 7 })
+
+      const result = await client.getConsoleLog("acme/web", 7)
+
+      expect(result.truncated).toBe(true)
+      expect(result.returnedBytes).toBeLessThanOrEqual(204800)
+      expect(result.returnedBytes).toBeGreaterThan(60000) // more than one line fits
+      expect(result.text).toMatch(/\n$/) // the cap cut on a line boundary
+      expect(result.text!.split("\n").length).toBe(4) // 3 whole lines plus the join after the last
+    })
+
+    it("returns a short log whole with truncated false and totalBytes", async () => {
+      const fullLog = "Line 1\nLine 2\nLine 3\n"
+      vi.mocked(common.httpGetText).mockResolvedValue(fullLog)
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 10 })
+
+      const result = await client.getConsoleLog("acme/web", 10, {
+        maxBytes: 204800,
+      })
+
+      expect(result.truncated).toBe(false)
+      expect(result.text).toBe(fullLog)
+      expect(result.startByte).toBe(0)
+      expect(result.totalBytes).toBe(Buffer.byteLength(fullLog, "utf8"))
+    })
+
+    it("keeps logSnippet from the fetched log", async () => {
+      const fullLog = "First line of the log\nSecond line\n"
+      vi.mocked(common.httpGetText).mockResolvedValue(fullLog)
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 3 })
+
+      const result = await client.getConsoleLog("acme/web", 3, {
+        maxSnippetLength: 10,
+      })
+
+      expect(result.logSnippet).toBe("First line")
+    })
+
+    // Previous contract: the third argument used to be maxSnippetLength as a
+    // bare number. A direct importer calling getConsoleLog("acme/web", 10, 50)
+    // must still get a 50-character snippet, alongside the new capped text and
+    // the removed fullLog.
+    it("keeps the bare-number third argument meaning maxSnippetLength", async () => {
+      const fullLog = "S" + "p".repeat(99) + "ider\nWait\n"
+      vi.mocked(common.httpGetText).mockResolvedValue(fullLog)
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 10 })
+
+      const result = await client.getConsoleLog("acme/web", 10, 50)
+
+      expect(result.logSnippet).toHaveLength(50)
+      expect(result.truncated).toBe(false)
+      expect(result.text).toBe(fullLog)
+      expect((result as any).fullLog).toBeUndefined()
+    })
+
+    // Deliberate breaking change: the old contract returned `fullLog` with the
+    // whole log in the result, and that one JSON-RPC message could blow past an
+    // MCP client's 16 MB per-message cap, disconnecting the client and dropping
+    // the server's tools. A caller that used to read fullLog now gets the
+    // capped tail text instead and must page (start) or search (pattern) for
+    // the rest.
+    it("never returns fullLog: previous-contract callers get the capped text instead", async () => {
+      const fullLog = Array.from({ length: 600 }, (_, i) => `Line ${i + 1}`).join("\n")
+      vi.mocked(common.httpGetText).mockResolvedValue(fullLog)
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 10 })
+
+      const result = await client.getConsoleLog("acme/api-gateway/PR-123", 10)
+
+      expect((result as any).fullLog).toBeUndefined()
+      expect(Buffer.byteLength(result.text!, "utf8")).toBeLessThan(
+        Buffer.byteLength(fullLog, "utf8"),
+      )
+    })
+
+    it("defaults to fetching the last build when buildNumber is omitted", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({
         number: 15,
+        result: "SUCCESS",
+        duration: 1000,
+        timestamp: 1698768000000,
+        url: "https://jenkins.example.com/job/acme/job/web/15/",
         building: false,
       })
-      vi.mocked(common.httpGetText).mockResolvedValue(fullLog)
+      vi.mocked(common.httpGetText).mockResolvedValue("log\n")
 
-      const result = await client.getConsoleLog("my-job")
+      const result = await client.getConsoleLog("acme/web")
 
       expect(result.buildNumber).toBe(15)
+    })
+
+    it("rejects a start that is not a non-negative whole number", async () => {
+      await expect(
+        client.getConsoleLog("acme/web", 1, { start: -1 }),
+      ).rejects.toThrow(/non-negative whole number/)
+      await expect(
+        client.getConsoleLog("acme/web", 1, { start: 1.5 }),
+      ).rejects.toThrow(/non-negative whole number/)
+      expect(common.httpGetText).not.toHaveBeenCalled()
+      expect(common.httpGetTextWithHeaders).not.toHaveBeenCalled()
+    })
+
+    it("rejects a maxBytes that is not a positive whole number", async () => {
+      await expect(
+        client.getConsoleLog("acme/web", 1, { maxBytes: 0 }),
+      ).rejects.toThrow(/positive whole number/)
+      await expect(
+        client.getConsoleLog("acme/web", 1, { maxBytes: -100 }),
+      ).rejects.toThrow(/positive whole number/)
+      await expect(
+        client.getConsoleLog("acme/web", 1, { maxBytes: 1.5 }),
+      ).rejects.toThrow(/positive whole number/)
+      expect(common.httpGetText).not.toHaveBeenCalled()
+    })
+
+    it("accepts start: 0 and pages the head of the log through progressiveText", async () => {
+      vi.mocked(common.httpGetTextWithHeaders).mockResolvedValue({
+        text: "head of the log\n",
+        headers: { "x-text-size": "16", "x-more-data": "true" },
+      })
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 22 })
+
+      const result = await client.getConsoleLog("acme/api-gateway/PR-123", 22, {
+        start: 0,
+        maxBytes: 100,
+      })
+
+      expect(common.httpGetTextWithHeaders).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/acme/job/api-gateway/job/PR-123/22/logText/progressiveText?start=0",
+        expect.anything(),
+      )
+      expect(result.text).toBe("head of the log\n")
+      expect(result.startByte).toBe(0)
+      expect(result.nextStart).toBe(16) // X-Text-Size: the offset Jenkins reports to resume from
+      expect(result.moreData).toBe(true)
+      expect(result.truncated).toBe(false)
+    })
+
+    it("slices an oversized progressive chunk to maxBytes and reports the resume offset", async () => {
+      const chunk = `${"a".repeat(200)}\n${"b".repeat(200)}\n${"c".repeat(200)}\n`
+      vi.mocked(common.httpGetTextWithHeaders).mockResolvedValue({
+        text: chunk,
+        headers: { "x-text-size": "603", "x-more-data": "false" },
+      })
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 4 })
+
+      const result = await client.getConsoleLog("acme/web", 4, {
+        start: 5000,
+        maxBytes: 400,
+      })
+
+      expect(result.truncated).toBe(true)
+      expect(result.returnedBytes).toBeLessThanOrEqual(400)
+      expect(result.nextStart).toBe(5000 + result.returnedBytes)
+      expect(result.moreData).toBe(false)
+    })
+
+    it("falls back to start + returned bytes when the response text is cut and Jenkins sent no usable X-Text-Size", async () => {
+      const chunk = `${"y".repeat(300)}\n${"z".repeat(300)}\n`
+      vi.mocked(common.httpGetTextWithHeaders).mockResolvedValue({
+        text: chunk,
+        headers: {},
+      })
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 4 })
+
+      const result = await client.getConsoleLog("acme/web", 4, {
+        start: 128,
+        maxBytes: 320,
+      })
+
+      expect(result.truncated).toBe(true)
+      expect(result.nextStart).toBe(128 + result.returnedBytes)
+    })
+
+    it("rejects a non-string pattern, and passes a string one through", async () => {
+      await expect(
+        client.getConsoleLog("acme/web", 1, {
+          pattern: 5 as unknown as string,
+        }),
+      ).rejects.toThrow(/pattern must be a string/)
+      expect(common.httpGetJson).not.toHaveBeenCalled()
+    })
+
+    it("treats a compiling pattern as a regex over the whole log and numbers hits", async () => {
+      // 800 lines so the tail default is never in play; the pattern searches
+      // the entire log, not just the last 500 lines.
+      const lines: string[] = []
+      for (let i = 1; i <= 800; i++)
+        lines.push(i % 100 === 0 ? `ERROR at step ${i}` : `ok step ${i}`)
+      vi.mocked(common.httpGetText).mockResolvedValue(lines.join("\n") + "\n")
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 30 })
+
+      const result = await client.getConsoleLog("acme/api-gateway/PR-123", 30, {
+        pattern: "^ERROR at step (\\d+)$",
+      })
+
+      expect(result.totalMatches).toBe(8)
+      expect(result.truncated).toBe(false)
+      expect(result.pattern).toBe("^ERROR at step (\\d+)$")
+      expect(result.matches).toEqual(
+        [100, 200, 300, 400, 500, 600, 700, 800].map((n) => ({
+          line: n,
+          text: `ERROR at step ${n}`,
+        })),
+      )
+    })
+
+    it("falls back to a plain substring match when the pattern does not compile", async () => {
+      vi.mocked(common.httpGetText).mockResolvedValue(
+        "ERROR(not found)\nok\nERROR(ok)\n",
+      )
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 2 })
+
+      const result = await client.getConsoleLog("acme/web", 2, {
+        pattern: "ERROR(",
+      })
+
+      expect(result.totalMatches).toBe(2)
+      expect(result.matches).toEqual([
+        { line: 1, text: "ERROR(not found)" },
+        { line: 3, text: "ERROR(ok)" },
+      ])
+    })
+
+    it("caps matches at 500 and reports the total", async () => {
+      const lines = Array.from(
+        { length: 700 },
+        (_, i) => `MISS ${i + 1}`,
+      )
+      vi.mocked(common.httpGetText).mockResolvedValue(lines.join("\n") + "\n")
+      vi.mocked(common.httpGetJson).mockResolvedValue({ number: 9 })
+
+      const result = await client.getConsoleLog("acme/web", 9, {
+        pattern: "MISS",
+      })
+
+      expect(result.matches).toHaveLength(500)
+      expect(result.totalMatches).toBe(700)
+      expect(result.truncated).toBe(true)
+      expect(result.returnedBytes).toBeLessThanOrEqual(204800)
+    })
+
+    it("still maps a 404 on the log fetch to build not found", async () => {
+      vi.mocked(common.httpGetText).mockRejectedValue(new Error("HTTP 404"))
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({ name: "acme/web" })
+
+      await expect(client.getConsoleLog("acme/web", 12)).rejects.toThrow(
+        "Build 12 not found for job acme/web",
+      )
+    })
+
+    it("still maps a 404 on a paged fetch to build not found", async () => {
+      vi.mocked(common.httpGetTextWithHeaders).mockRejectedValue(
+        new Error("HTTP 404"),
+      )
+      vi.mocked(common.httpGetJson).mockResolvedValueOnce({ name: "acme/web" })
+
+      await expect(
+        client.getConsoleLog("acme/web", 12, { start: 0 }),
+      ).rejects.toThrow("Build 12 not found for job acme/web")
     })
   })
 
   describe("triggerBuild", () => {
+    // Every trigger now reads the job's parameter definitions first, so each
+    // test seeds the lookup: `property: []` is a job with no parameters.
+    const jobDefs = (
+      defs: { name: string; type?: string; default?: any }[],
+    ) => ({
+      property: [
+        {
+          _class: "hudson.model.ParametersDefinitionProperty",
+          parameterDefinitions: defs.map((d) => ({
+            name: d.name,
+            type: d.type,
+            defaultParameterValue: d.default === undefined ? undefined : { value: d.default },
+          })),
+        },
+      ],
+    })
+    const DEPLOY_DEFS = jobDefs([
+      { name: "DEPLOY_TO_QA", type: "BooleanParameterDefinition", default: true },
+      { name: "REGION", type: "ChoiceParameterDefinition", default: "eu-west-1" },
+    ])
+
     it("should trigger build without parameters", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "abc123" }
       vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
         headers: { location: "https://jenkins.example.com/queue/item/123/" },
       })
 
@@ -459,9 +771,13 @@ describe("JenkinsClient", () => {
     })
 
     it("should trigger build with parameters", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(
+        jobDefs([{ name: "branch" }, { name: "tag" }]),
+      )
       const mockCrumb = { crumbRequestField: "Jenkins-Crumb", crumb: "xyz789" }
       vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
         headers: { location: "https://jenkins.example.com/queue/item/456/" },
       })
 
@@ -482,6 +798,9 @@ describe("JenkinsClient", () => {
     })
 
     it("re-issues the crumb and retries once when the cached session goes stale", async () => {
+      vi.mocked(common.httpGetJson)
+        .mockResolvedValueOnce(jobDefs([]))
+        .mockResolvedValueOnce(jobDefs([{ name: "branch" }]))
       vi.mocked(fetch)
         .mockReturnValueOnce(
           mockFetchResponse(
@@ -521,6 +840,7 @@ describe("JenkinsClient", () => {
     })
 
     it("throws instead of returning a null queueUrl when Jenkins refuses the trigger", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
       vi.mocked(fetch).mockReturnValue(
         mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
       )
@@ -531,6 +851,7 @@ describe("JenkinsClient", () => {
     })
 
     it("maps a 404 trigger response to job not found", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
       vi.mocked(fetch).mockReturnValue(
         mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
       )
@@ -542,6 +863,7 @@ describe("JenkinsClient", () => {
     })
 
     it("captures Set-Cookie from crumb fetch and injects Cookie on POST", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
       const mockCrumb = {
         crumbRequestField: "Jenkins-Crumb",
         crumb: "cookie123",
@@ -567,6 +889,7 @@ describe("JenkinsClient", () => {
     })
 
     it("returns the queue URL from a 201 response with a Location header", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
       vi.mocked(fetch).mockReturnValue(
         mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
       )
@@ -585,6 +908,9 @@ describe("JenkinsClient", () => {
     // redirect into a 200 HTML page that reads as a queued build. The trigger
     // POSTs must ask not to follow so the redirect itself surfaces.
     it("sends the trigger POST asking not to follow redirects", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(
+        jobDefs([{ name: "branch" }]),
+      )
       vi.mocked(fetch).mockReturnValue(
         mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
       )
@@ -601,6 +927,7 @@ describe("JenkinsClient", () => {
     })
 
     it("rejects a 2xx trigger response with no queue Location header", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
       vi.mocked(fetch).mockReturnValue(
         mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
       )
@@ -621,6 +948,7 @@ describe("JenkinsClient", () => {
     })
 
     it("rejects a redirect trigger response instead of following it", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
       vi.mocked(fetch).mockReturnValue(
         mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
       )
@@ -634,6 +962,161 @@ describe("JenkinsClient", () => {
       )
       expect(common.httpPost).toHaveBeenCalledTimes(1)
     })
+
+    it("POSTs to buildWithParameters with the form body when all parameters are passed", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(DEPLOY_DEFS)
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
+        headers: { location: "https://jenkins.example.com/queue/item/9/" },
+      })
+
+      const result = await client.triggerBuild("acme/api-gateway/PR-123", {
+        DEPLOY_TO_QA: false,
+        REGION: "eu-west-2",
+      })
+
+      expect(result.queueUrl).toBe(
+        "https://jenkins.example.com/queue/item/9/",
+      )
+      expect(common.httpPost).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/acme/job/api-gateway/job/PR-123/buildWithParameters",
+        expect.objectContaining({ body: "DEPLOY_TO_QA=false&REGION=eu-west-2" }),
+      )
+    })
+
+    // The previous contract POSTed /build and got a bare HTTP 400 back. It now
+    // refuses before any POST is made, naming every missing parameter.
+    it("refuses with PARAMETERS_REQUIRED when parameters are missing and useDefaults is not set", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(DEPLOY_DEFS)
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+
+      const err = await client
+        .triggerBuild("acme/api-gateway/PR-123", { REGION: "eu-west-2" })
+        .then(
+          () => null,
+          (e) => e as any,
+        )
+
+      expect(err.code).toBe("PARAMETERS_REQUIRED")
+      expect(err.message).toBe(
+        "Job acme/api-gateway/PR-123 has parameters that were not passed: " +
+          "DEPLOY_TO_QA (BooleanParameterDefinition, default true). " +
+          "Pass them in params, or set useDefaults: true to let Jenkins fill them.",
+      )
+      expect(common.httpPost).not.toHaveBeenCalled()
+    })
+
+    it("refuses with PARAMETERS_REQUIRED when no parameters at all were passed", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(DEPLOY_DEFS)
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+
+      const err = await client
+        .triggerBuild("acme/api-gateway/PR-123")
+        .then(
+          () => null,
+          (e) => e as any,
+        )
+
+      expect(err.code).toBe("PARAMETERS_REQUIRED")
+      expect(err.message).toBe(
+        "Job acme/api-gateway/PR-123 has parameters that were not passed: " +
+          "DEPLOY_TO_QA (BooleanParameterDefinition, default true), " +
+          "REGION (ChoiceParameterDefinition, default eu-west-1). " +
+          "Pass them in params, or set useDefaults: true to let Jenkins fill them.",
+      )
+      expect(common.httpPost).not.toHaveBeenCalled()
+    })
+
+    it("lets Jenkins fill the defaults when useDefaults is true", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(DEPLOY_DEFS)
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
+        headers: { location: "https://jenkins.example.com/queue/item/10/" },
+      })
+
+      const result = await client.triggerBuild(
+        "acme/api-gateway/PR-123",
+        {},
+        { useDefaults: true },
+      )
+
+      expect(result.queueUrl).toBe(
+        "https://jenkins.example.com/queue/item/10/",
+      )
+      // Parameterised endpoint even with an empty params set
+      expect(common.httpPost).toHaveBeenCalledWith(
+        "https://jenkins.example.com/job/acme/job/api-gateway/job/PR-123/buildWithParameters",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "Content-Type": "application/x-www-form-urlencoded",
+          }),
+          body: "",
+        }),
+      )
+    })
+
+    it("refuses with INVALID_INPUT for a parameter the job does not define", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(DEPLOY_DEFS)
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+
+      const err = await client
+        .triggerBuild("acme/api-gateway/PR-123", { VERSION: "1.2.3" })
+        .then(
+          () => null,
+          (e) => e as any,
+        )
+
+      expect(err.code).toBe("INVALID_INPUT")
+      expect(err.message).toBe(
+        "Unknown parameters for job acme/api-gateway/PR-123: VERSION. " +
+          "Valid parameters: DEPLOY_TO_QA, REGION.",
+      )
+      expect(common.httpPost).not.toHaveBeenCalled()
+    })
+
+    it("refuses params passed to a job that takes no parameters", async () => {
+      vi.mocked(common.httpGetJson).mockResolvedValue(jobDefs([]))
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+
+      const err = await client
+        .triggerBuild("acme/web", { VERSION: "1.2.3" })
+        .then(
+          () => null,
+          (e) => e as any,
+        )
+
+      expect(err.code).toBe("INVALID_INPUT")
+      expect(err.message).toBe(
+        "Unknown parameters for job acme/web: VERSION. This job takes no parameters.",
+      )
+      expect(common.httpPost).not.toHaveBeenCalled()
+    })
+
+    it("maps a 404 on the parameter lookup to job not found", async () => {
+      vi.mocked(common.httpGetJson).mockRejectedValue(new Error("HTTP 404"))
+      vi.mocked(fetch).mockReturnValue(
+        mockFetchResponse({ crumbRequestField: "Jenkins-Crumb", crumb: "c" }),
+      )
+
+      await expect(client.triggerBuild("acme/missing")).rejects.toThrow(
+        "Job not found: acme/missing",
+      )
+      expect(common.httpPost).not.toHaveBeenCalled()
+    })
   })
 
   describe("per-build 404s", () => {
@@ -644,6 +1127,7 @@ describe("JenkinsClient", () => {
     const resetHttpMocks = () => {
       vi.mocked(common.httpGetJson).mockReset()
       vi.mocked(common.httpGetText).mockReset()
+      vi.mocked(common.httpGetTextWithHeaders).mockReset()
       vi.mocked(common.httpPost).mockReset()
     }
     beforeEach(resetHttpMocks)
@@ -1219,6 +1703,7 @@ describe("JenkinsClient", () => {
       }
       vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
         headers: { location: "https://jenkins.example.com/queue/item/77/" },
       })
 
@@ -1245,6 +1730,7 @@ describe("JenkinsClient", () => {
       }
       vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
       vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
         headers: { location: "https://jenkins.example.com/queue/item/88/" },
       })
 
@@ -1272,17 +1758,52 @@ describe("JenkinsClient", () => {
       expect(params.get("mainScript")).toBe(script)
     })
 
-    it("should return null queueUrl when Jenkins supplies no Location header", async () => {
+    it("rejects a 2xx response with no queue Location header", async () => {
       const mockCrumb = {
         crumbRequestField: "Jenkins-Crumb",
         crumb: "replaynoloc",
       }
       vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
-      vi.mocked(common.httpPost).mockResolvedValue({ headers: {} })
+      vi.mocked(common.httpPost).mockResolvedValue({ status: 201, headers: {} })
 
-      const result = await client.replayBuild("my-pipeline", 3)
+      await expect(client.replayBuild("my-pipeline", 3)).rejects.toThrow(
+        "Replay returned HTTP 201 without a queue Location header for https://jenkins.example.com/job/my-pipeline/3/replay/rebuild",
+      )
+    })
 
-      expect(result.queueUrl).toBeNull()
+    it("rejects a redirect response instead of following it", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "replayredirect",
+      }
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 302,
+        headers: { location: "https://jenkins.example.com/login" },
+      })
+
+      await expect(client.replayBuild("my-pipeline", 3)).rejects.toThrow(
+        "Replay failed: HTTP 302 for https://jenkins.example.com/job/my-pipeline/3/replay/rebuild, redirects to https://jenkins.example.com/login, not followed",
+      )
+    })
+
+    // fetch follows redirects by default, which turned an authentication
+    // bounce into a 200 HTML page that read as a queued build.
+    it("sends the replay POST asking not to follow redirects", async () => {
+      const mockCrumb = {
+        crumbRequestField: "Jenkins-Crumb",
+        crumb: "replaymanual",
+      }
+      vi.mocked(fetch).mockReturnValue(mockFetchResponse(mockCrumb))
+      vi.mocked(common.httpPost).mockResolvedValue({
+        status: 201,
+        headers: { location: "https://jenkins.example.com/queue/item/90/" },
+      })
+
+      await client.replayBuild("my-pipeline", 3)
+
+      const call = vi.mocked(common.httpPost).mock.calls[0][1] as any
+      expect(call.redirect).toBe("manual")
     })
 
     it("reports build not found on 404 when the job still exists", async () => {
@@ -1324,10 +1845,19 @@ describe("JenkinsClient — request deadline (issue #18)", () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  // Pins the contract as it stood before timeoutMs existed: a caller that
-  // constructs the client the old way still gets the 10 s deadline.
-  it("keeps the 10 s default when credentials omit timeoutMs", () => {
+  // Pins the contract after the deadline default moved from 10 s to 30 s: a
+  // caller that constructs the client the old way now gets 30 s, and one that
+  // still wants 10 s has to pass it explicitly.
+  it("uses the 30 s default when credentials omit timeoutMs", () => {
     const client = new JenkinsClient({ baseUrl: "https://jenkins.example.com" })
+    expect(client.timeoutMs).toBe(30000)
+  })
+
+  it("keeps the old 10 s deadline for callers who pass it explicitly", () => {
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com",
+      timeoutMs: 10000,
+    })
     expect(client.timeoutMs).toBe(10000)
   })
 

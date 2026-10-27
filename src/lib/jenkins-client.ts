@@ -2,6 +2,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   httpGetJson,
   httpGetText,
+  httpGetTextWithHeaders,
   httpPost,
   Errors,
   McpError,
@@ -37,6 +38,44 @@ const createItemUrl = (baseUrl: string, fullName: string): string => {
 // build record, changeset and all, of which we keep six values.
 const BUILD_FIELDS = "number,result,duration,timestamp,url,building"
 const BUILD_TREE = `builds[${BUILD_FIELDS}]`
+
+// How much console log a single result may carry. The old contract returned
+// the whole log in one JSON-RPC message, and one oversized CI log past an MCP
+// client's per-message cap made that client disconnect and drop the server's
+// tools. The default shape is therefore a capped tail (the last 500 lines,
+// at most 204800 bytes), and everything else is opt-in paging and search.
+export const CONSOLE_LOG_TAIL_LINES = 500
+export const CONSOLE_LOG_DEFAULT_MAX_BYTES = 204800
+export const CONSOLE_LOG_MAX_BYTES_LIMIT = 1048576
+export const CONSOLE_LOG_MAX_MATCHES = 500
+export const DEFAULT_SNIPPET_LENGTH = 200
+
+export interface ConsoleLogMatch {
+  line: number
+  text: string
+}
+
+export interface ConsoleLogResult {
+  jobName: string
+  buildNumber: number
+  logSnippet: string
+  /** Default and paging modes: the returned log text. */
+  text?: string
+  truncated: boolean
+  /** Size of the whole build log in bytes. Only known in default and pattern modes. */
+  totalBytes?: number
+  returnedBytes: number
+  /** Default tail mode: byte offset of the returned text. Paging mode: the requested start. */
+  startByte?: number
+  /** Paging mode: byte offset to pass as start to read further. */
+  nextStart?: number
+  /** Paging mode: true while the build is still writing the log. */
+  moreData?: boolean
+  /** Pattern mode: the pattern as given, and how many lines matched in the whole log. */
+  pattern?: string
+  totalMatches?: number
+  matches?: ConsoleLogMatch[]
+}
 
 export interface NormalizedBuild {
   id: string
@@ -250,6 +289,24 @@ export class JenkinsClient {
     }
   }
 
+  // The lastBuild URL 404s both when the job is gone and when the job exists
+  // but has never been built; the response alone cannot tell which. One cheap
+  // read of the job record disambiguates it: callers rely on getLastBuild to
+  // throw rather than on a null (see getConsoleLog), so a never-built job gets
+  // its own explicit error instead of pretending the job is missing.
+  private async jobExists(jobName: string): Promise<boolean> {
+    try {
+      await httpGetJson(
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=name`,
+        this.req(),
+      )
+      return true
+    } catch (e: any) {
+      if (e.message?.includes("HTTP 404")) return false
+      throw e
+    }
+  }
+
   async getLastBuild(jobName: string): Promise<NormalizedBuild> {
     try {
       const raw = await httpGetJson<any>(
@@ -258,7 +315,10 @@ export class JenkinsClient {
       )
       return this.normalizeBuild(raw)
     } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      if (e.message?.includes("HTTP 404")) {
+        if (await this.jobExists(jobName)) throw Errors.noBuilds(jobName)
+        throw Errors.jobNotFound(jobName)
+      }
       throw e
     }
   }
@@ -280,30 +340,225 @@ export class JenkinsClient {
     }
   }
 
+  // First maxSnippetLength characters of the fetched text, mirroring the
+  // original snippet behaviour (trimmed, carriage returns stripped).
+  private logSnippet(text: string, maxSnippetLength: number): string {
+    return text.trim().slice(0, maxSnippetLength).replace(/\r/g, "")
+  }
+
+  // Largest prefix of text that stays within maxBytes and cuts cleanly: prefer
+  // a line boundary so no half line is returned; a single line longer than the
+  // whole budget falls back to a UTF-8 character boundary.
+  private sliceAtLineBoundary(text: string, maxBytes: number): string {
+    const buf = Buffer.from(text, "utf8")
+    if (buf.length <= maxBytes) return text
+    const lastNewline = buf.lastIndexOf("\n", maxBytes)
+    if (lastNewline <= 0) {
+      let cut = maxBytes
+      while (cut > 0 && (buf[cut] & 0xc0) === 0x80) cut--
+      return buf.subarray(0, cut).toString("utf8")
+    }
+    return buf.subarray(0, lastNewline + 1).toString("utf8")
+  }
+
+  // Default shape: the tail of the log, the last 500 lines, hard-capped at
+  // maxBytes. Truncated is set whenever the head was dropped or the byte cap
+  // cut anything, so a caller can tell the returned text is a window and page
+  // or search for the rest.
+  private logTailResult(
+    jobName: string,
+    buildNumber: number,
+    fullLog: string,
+    maxBytes: number,
+    snippetLength: number,
+  ): ConsoleLogResult {
+    const totalBytes = Buffer.byteLength(fullLog, "utf8")
+    let text = fullLog
+    let startByte = 0
+    let truncated = false
+    const lines = fullLog.split("\n")
+    // A trailing newline leaves one empty trailing element in the split; that
+    // artefact must not consume a slot in the 500-line window.
+    const hasFinalNewline = lines.length > 1 && lines[lines.length - 1] === ""
+    const lineCount = lines.length - (hasFinalNewline ? 1 : 0)
+    if (lineCount > CONSOLE_LOG_TAIL_LINES) {
+      const head = lines.slice(0, lineCount - CONSOLE_LOG_TAIL_LINES)
+      const tail = lines.slice(head.length, lineCount)
+      text = tail.join("\n") + (hasFinalNewline ? "\n" : "")
+      // The offset counts every dropped line's byte, so it is a true resume
+      // offset into the full log: head.join covers the head lines and their
+      // internal newlines, and one more newline separates head from tail.
+      startByte = Buffer.byteLength(head.join("\n"), "utf8") + 1
+      truncated = true
+    }
+    if (Buffer.byteLength(text, "utf8") > maxBytes) {
+      text = this.sliceAtLineBoundary(text, maxBytes)
+      truncated = true
+    }
+    return {
+      jobName,
+      buildNumber,
+      logSnippet: this.logSnippet(fullLog, snippetLength),
+      text,
+      truncated,
+      totalBytes,
+      returnedBytes: Buffer.byteLength(text, "utf8"),
+      startByte,
+    }
+  }
+
+  // Pattern shape: every matching line of the whole log with its 1-based line
+  // number. A pattern that does not compile falls back to a plain substring
+  // match so a caller is never blocked by regex syntax.
+  private logPatternResult(
+    jobName: string,
+    buildNumber: number,
+    fullLog: string,
+    pattern: string,
+    maxBytes: number,
+    snippetLength: number,
+  ): ConsoleLogResult {
+    const lines = fullLog.split("\n")
+    let re: RegExp | null = null
+    try {
+      re = new RegExp(pattern)
+    } catch {
+      re = null
+    }
+    const matchText = (line: string): string => line.replace(/\r$/, "")
+    const all: ConsoleLogMatch[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const lineText = matchText(lines[i])
+      const hit = re ? re.test(lineText) : lineText.includes(pattern)
+      if (hit) all.push({ line: i + 1, text: lineText })
+    }
+    const matches: ConsoleLogMatch[] = []
+    let returnedBytes = 0
+    for (const m of all) {
+      const mBytes = Buffer.byteLength(m.text, "utf8") + 1
+      if (matches.length >= CONSOLE_LOG_MAX_MATCHES || returnedBytes + mBytes > maxBytes) {
+        break
+      }
+      matches.push(m)
+      returnedBytes += mBytes
+    }
+    const truncated = matches.length < all.length
+    return {
+      jobName,
+      buildNumber,
+      logSnippet: this.logSnippet(fullLog, snippetLength),
+      pattern,
+      matches,
+      totalMatches: all.length,
+      truncated,
+      totalBytes: Buffer.byteLength(fullLog, "utf8"),
+      returnedBytes,
+    }
+  }
+
+  // Paging shape: Jenkins' progressiveText endpoint, which returns the log from
+  // a byte offset plus headers naming where to resume (X-Text-Size) and whether
+  // the build is still writing (X-More-Data). start: 0 therefore reads the head
+  // of the log, replacing the whole-log access the old contract offered.
+  private async pagedLogResult(
+    jobName: string,
+    buildNumber: number,
+    start: number,
+    maxBytes: number,
+    snippetLength: number,
+  ): Promise<ConsoleLogResult> {
+    const url = `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/logText/progressiveText?start=${start}`
+    const { text: chunk, headers } = await httpGetTextWithHeaders(url, this.req())
+    const returned = this.sliceAtLineBoundary(chunk, maxBytes)
+    const returnedBytes = Buffer.byteLength(returned, "utf8")
+    // When the chunk was sliced, the resume point is where the caller left off
+    // inside it; only an uncut response makes Jenkins' own X-Text-Size usable.
+    const textSize = Number(headers["x-text-size"])
+    const nextStart =
+      returnedBytes < Buffer.byteLength(chunk, "utf8")
+        ? start + returnedBytes
+        : Number.isFinite(textSize)
+          ? textSize
+          : start + returnedBytes
+    return {
+      jobName,
+      buildNumber,
+      logSnippet: this.logSnippet(returned, snippetLength),
+      text: returned,
+      truncated: returned !== chunk,
+      returnedBytes,
+      startByte: start,
+      nextStart,
+      moreData: headers["x-more-data"] === "true",
+    }
+  }
+
   async getConsoleLog(
     jobName: string,
     buildNumber?: number,
-    maxSnippetLength = 200,
-  ): Promise<{
-    jobName: string
-    buildNumber: number
-    logSnippet: string
-    fullLog: string
-  }> {
+    options:
+      | {
+          start?: number
+          maxBytes?: number
+          pattern?: string
+          maxSnippetLength?: number
+        }
+      | number = {},
+  ): Promise<ConsoleLogResult> {
+    // The old positional contract passed maxSnippetLength here directly. A plain
+    // JS caller still does, and a number destructured as an object would yield
+    // nothing and silently ignore the value, so a number keeps that meaning.
+    const normalized =
+      typeof options === "number" ? { maxSnippetLength: options } : options
+    const { start, pattern } = normalized
+    // Input validation lives here and not only in the JSON schema: JenkinsClient
+    // is a public API, and direct importers get no schema.
+    if (start !== undefined && (!Number.isInteger(start) || start < 0)) {
+      throw Errors.invalidInput(
+        "start must be a non-negative whole number of bytes",
+      )
+    }
+    if (normalized.maxBytes !== undefined) {
+      const requested = normalized.maxBytes
+      if (!Number.isInteger(requested) || requested <= 0) {
+        throw Errors.invalidInput(
+          "maxBytes must be a positive whole number of bytes",
+        )
+      }
+    }
+    const maxBytes = Math.min(
+      normalized.maxBytes ?? CONSOLE_LOG_DEFAULT_MAX_BYTES,
+      CONSOLE_LOG_MAX_BYTES_LIMIT,
+    )
+    if (pattern !== undefined && typeof pattern !== "string") {
+      throw Errors.invalidInput("pattern must be a string")
+    }
+    const snippetLength = normalized.maxSnippetLength ?? DEFAULT_SNIPPET_LENGTH
+    if (normalized.maxSnippetLength !== undefined) {
+      const requested = normalized.maxSnippetLength
+      if (!Number.isInteger(requested) || requested <= 0) {
+        throw Errors.invalidInput(
+          "maxSnippetLength must be a positive whole number",
+        )
+      }
+    }
+
     let bn = buildNumber
     if (bn == null) {
       bn = Number((await this.getLastBuild(jobName)).id)
     }
     try {
+      if (start !== undefined) {
+        return await this.pagedLogResult(jobName, bn, start, maxBytes, snippetLength)
+      }
       const fullLog = await httpGetText(
         `${this.baseUrl}/job/${jobPath(jobName)}/${bn}/consoleText`,
         this.req(),
       )
-      const snippet = fullLog
-        .trim()
-        .slice(0, maxSnippetLength)
-        .replace(/\r/g, "")
-      return { jobName, buildNumber: bn, logSnippet: snippet, fullLog }
+      if (pattern !== undefined) {
+        return this.logPatternResult(jobName, bn, fullLog, pattern, maxBytes, snippetLength)
+      }
+      return this.logTailResult(jobName, bn, fullLog, maxBytes, snippetLength)
     } catch (e: any) {
       if (e.message?.includes("HTTP 404"))
         throw await this.buildNotFoundError(jobName, bn)
@@ -397,9 +652,58 @@ export class JenkinsClient {
   async triggerBuild(
     jobName: string,
     params?: Record<string, any>,
+    options?: { useDefaults?: boolean },
   ): Promise<{ jobName: string; queueUrl: string | null }> {
+    const passed = params ?? {}
+    const passedKeys = Object.keys(passed)
+
+    // /build answers 400 on a job that has parameter definitions, and deploy
+    // style parameters that default to true must never be triggered from
+    // Jenkins' own silent defaults. Read the definitions first: they choose the
+    // endpoint and validate the params, so a bad trigger never leaves the
+    // client. The 404 of the lookup itself maps to the job being missing.
+    const defs = (await this.fetchParameterDefinitions(jobName)).map(
+      (d: any) => ({
+        name: d.name ?? "",
+        type: d.type ?? d._class ?? "",
+        defaultValue: d.defaultParameterValue?.value,
+      }),
+    )
+    const isParameterized = defs.length > 0
+    const defNameSet = new Set(defs.map((d) => d.name))
+
+    const unknown = passedKeys.filter((k) => !defNameSet.has(k))
+    if (unknown.length > 0) {
+      const valid = isParameterized
+        ? ` Valid parameters: ${defs.map((d) => d.name).join(", ")}.`
+        : " This job takes no parameters."
+      throw Errors.invalidInput(
+        `Unknown parameters for job ${jobName}: ${unknown.join(", ")}.${valid}`,
+      )
+    }
+
+    // A missing parameter left to Jenkins silently picks up the job's own
+    // default, which for deploy flags defaults to true. Refuse unless the
+    // caller explicitly opted into the defaults.
+    const useDefaults = options?.useDefaults === true
+    const missing = defs.filter((d) => !(d.name in passed))
+    if (missing.length > 0 && !useDefaults) {
+      const defaultLabel = (v: any) =>
+        v === undefined
+          ? "none"
+          : typeof v === "string"
+            ? v
+            : JSON.stringify(v)
+      throw Errors.parametersRequired(
+        `Job ${jobName} has parameters that were not passed: ` +
+          missing
+            .map((d) => `${d.name} (${d.type}, default ${defaultLabel(d.defaultValue)})`)
+            .join(", ") +
+          ". Pass them in params, or set useDefaults: true to let Jenkins fill them.",
+      )
+    }
+
     const crumb = await this.ensureCrumb()
-    const isParameterized = params && Object.keys(params).length > 0
     const path = isParameterized ? "buildWithParameters" : "build"
     const url = `${this.baseUrl}/job/${jobPath(jobName)}/${path}`
     let body: string | undefined
@@ -407,7 +711,7 @@ export class JenkinsClient {
     if (crumb) headers[crumb.crumbRequestField] = crumb.crumb
     if (isParameterized) {
       const usp = new URLSearchParams()
-      for (const [k, v] of Object.entries(params!)) usp.append(k, String(v))
+      for (const [k, v] of Object.entries(passed)) usp.append(k, String(v))
       body = usp.toString()
       headers["Content-Type"] = "application/x-www-form-urlencoded"
     }
@@ -735,6 +1039,37 @@ export class JenkinsClient {
     }
   }
 
+  // One fetch of the job's parameter definitions, shared by getJobParameters
+  // (which formats them for callers) and triggerBuild (which validates params
+  // against them). Only the HTTP and lookup live here; the parsing differs.
+  private async fetchParameterDefinitions(
+    jobName: string,
+  ): Promise<
+    {
+      name: string
+      type: string
+      description: string
+      defaultValue: any
+      choices?: string[]
+    }[]
+  > {
+    try {
+      const data = await httpGetJson<any>(
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]`,
+        this.req(),
+      )
+      const paramProp = (data.property ?? []).find(
+        (p: any) =>
+          p._class === "hudson.model.ParametersDefinitionProperty" ||
+          Array.isArray(p.parameterDefinitions),
+      )
+      return paramProp?.parameterDefinitions ?? []
+    } catch (e: any) {
+      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
+      throw e
+    }
+  }
+
   // Get parameter definitions for a parameterised job
   async getJobParameters(jobName: string): Promise<{
     jobName: string
@@ -746,37 +1081,23 @@ export class JenkinsClient {
       choices?: string[]
     }[]
   }> {
-    try {
-      const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]`,
-        this.req(),
-      )
-      const paramProp = (data.property ?? []).find(
-        (p: any) =>
-          p._class === "hudson.model.ParametersDefinitionProperty" ||
-          Array.isArray(p.parameterDefinitions),
-      )
-      const defs: any[] = paramProp?.parameterDefinitions ?? []
-      const parameters = defs.map((d: any) => {
-        const raw: string = d.type ?? d._class ?? ""
-        const type = raw
-          .replace(/^.*\./, "")
-          .replace(/ParameterDefinition$/, "")
-          .toLowerCase()
-        const entry: ReturnType<typeof Object.assign> = {
-          name: d.name ?? "",
-          type,
-          description: d.description ?? "",
-          defaultValue: d.defaultParameterValue?.value ?? null,
-        }
-        if (Array.isArray(d.choices)) entry.choices = d.choices
-        return entry
-      })
-      return { jobName, parameters }
-    } catch (e: any) {
-      if (e.message?.includes("HTTP 404")) throw Errors.jobNotFound(jobName)
-      throw e
-    }
+    const defs = await this.fetchParameterDefinitions(jobName)
+    const parameters = defs.map((d: any) => {
+      const raw: string = d.type ?? d._class ?? ""
+      const type = raw
+        .replace(/^.*\./, "")
+        .replace(/ParameterDefinition$/, "")
+        .toLowerCase()
+      const entry: ReturnType<typeof Object.assign> = {
+        name: d.name ?? "",
+        type,
+        description: d.description ?? "",
+        defaultValue: d.defaultParameterValue?.value ?? null,
+      }
+      if (Array.isArray(d.choices)) entry.choices = d.choices
+      return entry
+    })
+    return { jobName, parameters }
   }
 
   // List nodes/agents
@@ -1139,7 +1460,7 @@ export class JenkinsClient {
   ): Promise<{
     jobName: string
     buildNumber: number
-    queueUrl: string | null
+    queueUrl: string
   }> {
     const crumb = await this.ensureCrumb()
     const headers: Record<string, string> = this.headers()
@@ -1153,15 +1474,28 @@ export class JenkinsClient {
       headers["Content-Type"] = "application/x-www-form-urlencoded"
       init.body = new URLSearchParams({ mainScript }).toString()
     }
-    const res = await httpPost(
-      `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/replay/rebuild`,
-      init,
-    )
+    const url = `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/replay/rebuild`
+    // Same rule as the trigger POSTs: a followed redirect turns an
+    // authentication bounce into a 200 HTML page that reads as a queued build,
+    // so the 3xx itself must surface.
+    const res = await httpPost(url, { ...init, redirect: "manual" })
     if (res.status === 404)
       throw await this.buildNotFoundError(jobName, buildNumber)
     if (res.status >= 400)
       throw Errors.unexpected(`Replay failed with status ${res.status}`)
-    return { jobName, buildNumber, queueUrl: res.headers["location"] || null }
+    if (res.status >= 300) {
+      const redirect = res.headers["location"]
+      throw Errors.unexpected(
+        `Replay failed: HTTP ${res.status} for ${url}` +
+          (redirect ? `, redirects to ${redirect}, not followed` : ""),
+      )
+    }
+    const queueUrl = res.headers["location"] || null
+    if (!queueUrl)
+      throw Errors.unexpected(
+        `Replay returned HTTP ${res.status} without a queue Location header for ${url}`,
+      )
+    return { jobName, buildNumber, queueUrl }
   }
 }
 

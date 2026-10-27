@@ -59,7 +59,7 @@ For bearer token authentication, replace the env block with:
 
 ### Slow instances
 
-Every request this server makes is bounded by one deadline, **10 seconds** by default. A large or busy Jenkins can spend longer than that answering a single call — and when it does, the error you see (`Jenkins request timed out`) comes from this server giving up, not from Jenkins refusing anything.
+Every request this server makes is bounded by one deadline, **30 seconds** by default. A large or busy Jenkins can spend even longer answering a single call. When that happens, the error you see (`Jenkins request timed out`) comes from this server giving up, not from Jenkins refusing anything.
 
 Raise it with `MCP_JENKINS_TIMEOUT_MS`:
 
@@ -67,14 +67,14 @@ Raise it with `MCP_JENKINS_TIMEOUT_MS`:
 "env": {
   "MCP_JENKINS_URL": "https://pipeline.yourcompany.com",
   "MCP_JENKINS_BEARER_TOKEN": "your_bearer_token",
-  "MCP_JENKINS_TIMEOUT_MS": "30000"
+  "MCP_JENKINS_TIMEOUT_MS": "60000"
 }
 ```
 
 Or on the command line:
 
 ```sh
-mcp-jenkins --url https://pipeline.yourcompany.com --bearer-token abc123 --timeout-ms 30000
+mcp-jenkins --url https://pipeline.yourcompany.com --bearer-token abc123 --timeout-ms 60000
 ```
 
 One value applies to every configured instance. To find out what your instance actually needs, time the call the server makes:
@@ -82,6 +82,20 @@ One value applies to every configured instance. To find out what your instance a
 ```sh
 time curl -u user:token 'https://pipeline.yourcompany.com/job/my-job/api/json'
 ```
+
+### Environment variables
+
+| Variable                   | Description                                                                       | Default          |
+| -------------------------- | --------------------------------------------------------------------------------- | ---------------- |
+| `MCP_JENKINS_URL`          | Jenkins server URL. Comma-separated to connect to several instances.              | Required         |
+| `MCP_JENKINS_USER`         | Username for Basic auth, positional alongside the URL values.                     | None             |
+| `MCP_JENKINS_API_TOKEN`    | API token for Basic auth, positional alongside the URL values.                    | None             |
+| `MCP_JENKINS_BEARER_TOKEN` | Bearer token for token-based auth, instead of Basic auth.                         | None             |
+| `MCP_JENKINS_ANONYMOUS`    | `true` for a Jenkins instance that needs no authentication.                       | `false`          |
+| `MCP_JENKINS_TIMEOUT_MS`   | Per-request deadline in milliseconds, applied to every instance.                  | `30000`          |
+| `MCP_JENKINS_INSTANCES`    | Comma-separated instance names, pairing each name with a URL position.            | Hostname per URL |
+| `MCP_JENKINS_ALLOW_TOOLS`  | Comma-separated tool names: expose only these tools.                              | All tools        |
+| `MCP_JENKINS_BLOCK_TOOLS`  | Comma-separated tool names: hide these tools (ignored when the allowlist is set). | All tools        |
 
 ### Tools
 

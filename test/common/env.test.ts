@@ -254,12 +254,19 @@ describe("loadAllJenkinsInstances — request timeout", () => {
     process.env["MCP_JENKINS_API_TOKEN"] = "mytoken"
   }
 
-  // Pins the contract as it stood before the option existed: an install that
-  // sets nothing keeps the 10 s deadline it has always had.
-  it("defaults to 10 s when nothing is configured", () => {
+  // Pins the contract after the default moved from 10 s to 30 s: a quiet
+  // install now waits 30 s, and the old deadline needs to be set explicitly.
+  it("defaults to 30 s when nothing is configured", () => {
     withCreds()
     const env = loadAllJenkinsInstances({}).values().next().value
     expect(env.JENKINS_TIMEOUT_MS).toBe(DEFAULT_TIMEOUT_MS)
+    expect(env.JENKINS_TIMEOUT_MS).toBe(30000)
+  })
+
+  it("keeps the old 10 s deadline for callers who set it explicitly", () => {
+    withCreds()
+    process.env["MCP_JENKINS_TIMEOUT_MS"] = "10000"
+    const env = loadAllJenkinsInstances({}).values().next().value
     expect(env.JENKINS_TIMEOUT_MS).toBe(10000)
   })
 

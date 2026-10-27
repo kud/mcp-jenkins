@@ -177,7 +177,10 @@ export const rawTools: Tool[] = [
   {
     name: "jenkins_get_console_log",
     description:
-      "Get console log output from a build. Returns both a snippet and full log.",
+      "Get console log output from a build. By default returns the tail: the last 500 lines, hard-capped at 204800 bytes, with truncation metadata " +
+      "(the full log is never sent in one message, so a large log cannot overflow an MCP client's per-message limit). " +
+      "Pass start to read from a byte offset (start: 0 gives the head of the log) together with maxBytes to bound the response, or " +
+      "pattern (a regular expression; invalid ones fall back to a plain substring match) to search matching lines with their line numbers.",
     inputSchema: {
       type: "object",
       properties: {
@@ -189,6 +192,22 @@ export const rawTools: Tool[] = [
           type: "number",
           description: "Build number (optional, defaults to last build)",
         },
+        start: {
+          type: "number",
+          description:
+            "Byte offset to read the log from, 0 for the head. " +
+            "Reads Jenkins' progressive log endpoint and reports the resume offset in nextStart",
+        },
+        maxBytes: {
+          type: "number",
+          description:
+            "Maximum bytes of log text returned (default: 204800, maximum: 1048576)",
+        },
+        pattern: {
+          type: "string",
+          description:
+            "Regular expression matched against every line of the whole log; returns matching lines with their 1-based line numbers",
+        },
       },
       required: ["jobName"],
     },
@@ -196,7 +215,11 @@ export const rawTools: Tool[] = [
   },
   {
     name: "jenkins_trigger_build",
-    description: "Trigger a new build for a job, optionally with parameters",
+    description:
+      "Trigger a new build for a job, optionally with parameters. " +
+      "If the job defines parameters, every parameter must be passed in params, or useDefaults set to true: " +
+      "Jenkins fills missing ones with the job's defaults, which can include deploy flags that default to true. " +
+      "The guard refuses the trigger otherwise.",
     inputSchema: {
       type: "object",
       properties: {
@@ -208,6 +231,11 @@ export const rawTools: Tool[] = [
           type: "object",
           description: "Optional build parameters as key-value pairs",
           additionalProperties: true,
+        },
+        useDefaults: {
+          type: "boolean",
+          description:
+            "Default false. When true, missing parameters are left for Jenkins to fill with the job's own defaults.",
         },
       },
       required: ["jobName"],
