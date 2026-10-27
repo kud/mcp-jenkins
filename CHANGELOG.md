@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 
 ---
 
+## [3.0.0] — 2026-10-27
+
+### 💥 Breaking Changes
+
+- `jenkins_get_console_log` no longer returns `fullLog`. By default it now returns the last 500 lines, capped at 200 KB, as `text` with `truncated`, `totalBytes`, `returnedBytes` and `startByte`. To read a whole log, pass `start: 0` and keep paging with the returned `nextStart` until `moreData` is false ([#a312eb4](https://github.com/kud/mcp-jenkins/commit/a312eb4)).
+
+### ✨ Features
+
+- `jenkins_get_console_log` can page through a log with `start`, size each page with `maxBytes` (default 200 KB, up to 1 MB), and search with `pattern` (regex or plain substring) to get back only the matching lines ([#a312eb4](https://github.com/kud/mcp-jenkins/commit/a312eb4)).
+- `jenkins_trigger_build` now refuses a parameterised job when parameters are missing, with a `PARAMETERS_REQUIRED` error, instead of starting a build that sits waiting for input. Pass `useDefaults` to accept the job's defaults ([#a312eb4](https://github.com/kud/mcp-jenkins/commit/a312eb4)).
+- Every tool result is capped at 1 MB, so an oversized response can no longer disconnect your MCP client ([#a312eb4](https://github.com/kud/mcp-jenkins/commit/a312eb4)).
+- The default request timeout rises from 10 s to 30 s. `MCP_JENKINS_TIMEOUT_MS` and `--timeout-ms` still override it ([#a312eb4](https://github.com/kud/mcp-jenkins/commit/a312eb4)).
+
+### 🐛 Bug Fixes
+
+- Trigger and replay now fail when Jenkins returns no queue location, so a login redirect is no longer reported as a queued build ([#6ed73bc](https://github.com/kud/mcp-jenkins/commit/6ed73bc), [#a312eb4](https://github.com/kud/mcp-jenkins/commit/a312eb4)).
+- Stopping or deleting a build now reports Jenkins' HTTP errors instead of claiming success ([#6ed73bc](https://github.com/kud/mcp-jenkins/commit/6ed73bc)).
+- A missing build is reported as `BUILD_NOT_FOUND` (or `NO_BUILDS` for a job that has none) rather than as a missing job ([#6ed73bc](https://github.com/kud/mcp-jenkins/commit/6ed73bc), [#a312eb4](https://github.com/kud/mcp-jenkins/commit/a312eb4)).
+- Triggering a build retries once when Jenkins rejects a stale session with a 403, rather than failing outright ([#967975c](https://github.com/kud/mcp-jenkins/commit/967975c)).
+
+---
+
 ## [2.3.0] — 2026-09-10
 
 ### ✨ Features
