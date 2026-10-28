@@ -4,6 +4,14 @@ All notable changes to this project are documented here.
 
 ---
 
+## [3.0.1] — 2026-10-28
+
+### 🐛 Bug Fixes
+
+- Every Jenkins `tree=` query is now URL-encoded, so instances or reverse proxies that reject raw square brackets no longer answer job listing, job search, view listing and build lookups with HTTP 400. Thanks to @aceHubert (#21) ([#61bd5e9](https://github.com/kud/mcp-jenkins/commit/61bd5e9)).
+
+---
+
 ## [3.0.0] — 2026-10-27
 
 ### 💥 Breaking Changes
