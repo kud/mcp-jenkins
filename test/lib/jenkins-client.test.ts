@@ -102,7 +102,7 @@ describe("JenkinsClient", () => {
         { name: "job-2", url: "https://jenkins.example.com/job/job-2" },
       ])
       expect(common.httpGetJson).toHaveBeenCalledWith(
-        "https://jenkins.example.com/api/json?tree=jobs[name,url,_class,jobs[name]]",
+        "https://jenkins.example.com/api/json?tree=jobs%5Bname%2Curl%2C_class%2Cjobs%5Bname%5D%5D",
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: expect.any(String),
@@ -158,12 +158,12 @@ describe("JenkinsClient", () => {
       ])
       expect(common.httpGetJson).toHaveBeenNthCalledWith(
         2,
-        "https://jenkins.example.com/job/Sandbox/api/json?tree=jobs[name,url,_class,jobs[name]]",
+        "https://jenkins.example.com/job/Sandbox/api/json?tree=jobs%5Bname%2Curl%2C_class%2Cjobs%5Bname%5D%5D",
         expect.anything(),
       )
       expect(common.httpGetJson).toHaveBeenNthCalledWith(
         3,
-        "https://jenkins.example.com/job/Sandbox/job/Team/api/json?tree=jobs[name,url,_class,jobs[name]]",
+        "https://jenkins.example.com/job/Sandbox/job/Team/api/json?tree=jobs%5Bname%2Curl%2C_class%2Cjobs%5Bname%5D%5D",
         expect.anything(),
       )
     })
@@ -281,7 +281,7 @@ describe("JenkinsClient", () => {
       ])
       expect(common.httpGetJson).toHaveBeenNthCalledWith(
         1,
-        "https://jenkins.example.com/job/Sandbox/api/json?tree=jobs[name,url,_class,jobs[name]]",
+        "https://jenkins.example.com/job/Sandbox/api/json?tree=jobs%5Bname%2Curl%2C_class%2Cjobs%5Bname%5D%5D",
         expect.anything(),
       )
     })
@@ -1909,24 +1909,24 @@ describe("JenkinsClient — query shape (issue #18)", () => {
     vi.mocked(common.httpGetJson).mockResolvedValue({ builds: [] })
     await client.getRecentBuilds("test-job", 3)
     expect(urlOf()).not.toContain("depth=1")
-    expect(urlOf()).toContain(
-      "tree=builds[number,result,duration,timestamp,url,building]{0,3}",
+    expect(new URL(urlOf()).searchParams.get("tree")).toBe(
+      "builds[number,result,duration,timestamp,url,building]{0,3}",
     )
   })
 
   it("names only the fields it reads on a single build", async () => {
     vi.mocked(common.httpGetJson).mockResolvedValue({ number: 55 })
     await client.getBuild("my-job", 55)
-    expect(urlOf()).toContain(
-      "tree=number,result,duration,timestamp,url,building",
+    expect(new URL(urlOf()).searchParams.get("tree")).toBe(
+      "number,result,duration,timestamp,url,building",
     )
   })
 
   it("names only the fields it reads on the last build", async () => {
     vi.mocked(common.httpGetJson).mockResolvedValue({ number: 55 })
     await client.getLastBuild("my-job")
-    expect(urlOf()).toContain(
-      "tree=number,result,duration,timestamp,url,building",
+    expect(new URL(urlOf()).searchParams.get("tree")).toBe(
+      "number,result,duration,timestamp,url,building",
     )
   })
 
@@ -1935,5 +1935,95 @@ describe("JenkinsClient — query shape (issue #18)", () => {
       /positive whole number/,
     )
     expect(common.httpGetJson).not.toHaveBeenCalled()
+  })
+})
+
+describe("JenkinsClient — tree query encoding", () => {
+  const cases: {
+    name: string
+    request: (client: JenkinsClient) => Promise<unknown>
+    path: string
+    tree: string
+  }[] = [
+    {
+      name: "job list",
+      request: (client) => client.listJobs(),
+      path: "/api/json",
+      tree: "jobs[name,url,_class,jobs[name]]",
+    },
+    {
+      name: "nested folder job list",
+      request: (client) => client.listJobs({ folder: "Team/Service A" }),
+      path: "/job/Team/job/Service%20A/api/json",
+      tree: "jobs[name,url,_class,jobs[name]]",
+    },
+    {
+      name: "job search",
+      request: (client) => client.searchJobs("test"),
+      path: "/api/json",
+      tree: "jobs[name,url,_class,jobs[name]]",
+    },
+    {
+      name: "view list",
+      request: (client) => client.listViews(),
+      path: "/api/json",
+      tree: "views[name,url,jobs[name,url]]",
+    },
+    {
+      name: "recent builds with a range",
+      request: (client) => client.getRecentBuilds("my-job", 3),
+      path: "/job/my-job/api/json",
+      tree: "builds[number,result,duration,timestamp,url,building]{0,3}",
+    },
+    {
+      name: "a given build",
+      request: (client) => client.getBuild("my-job", 55),
+      path: "/job/my-job/55/api/json",
+      tree: "number,result,duration,timestamp,url,building",
+    },
+    {
+      name: "last build",
+      request: (client) => client.getLastBuild("my-job"),
+      path: "/job/my-job/lastBuild/api/json",
+      tree: "number,result,duration,timestamp,url,building",
+    },
+    {
+      name: "build artifacts",
+      request: (client) => client.listArtifacts("my-job", 55),
+      path: "/job/my-job/55/api/json",
+      tree: "artifacts[fileName,relativePath]",
+    },
+    {
+      name: "parameter definitions",
+      request: (client) => client.getJobParameters("my-job"),
+      path: "/job/my-job/api/json",
+      tree: "property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]",
+    },
+    {
+      name: "build changes",
+      request: (client) => client.getBuildChanges("my-job", 55),
+      path: "/job/my-job/55/api/json",
+      tree: "changeSet[items[author[fullName],msg,commitId,timestamp]]",
+    },
+  ]
+
+  beforeEach(() => vi.clearAllMocks())
+
+  it.each(cases)("$name encodes special characters and keeps the query intact", async ({ request, path, tree }) => {
+    const client = new JenkinsClient({
+      baseUrl: "https://jenkins.example.com/jenkins",
+    })
+    vi.mocked(common.httpGetJson).mockResolvedValue({})
+
+    await request(client)
+
+    expect(common.httpGetJson).toHaveBeenCalledTimes(1)
+    const requestUrl = vi.mocked(common.httpGetJson).mock.calls[0][0] as string
+    const parsedUrl = new URL(requestUrl)
+    expect(parsedUrl.pathname).toBe(`/jenkins${path}`)
+    // No raw special characters on the wire; decoded, it is still the whole Jenkins tree expression.
+    expect(parsedUrl.search).not.toMatch(/[\[\]{},]/)
+    expect(parsedUrl.searchParams.get("tree")).toBe(tree)
+    expect([...parsedUrl.searchParams.keys()]).toEqual(["tree"])
   })
 })

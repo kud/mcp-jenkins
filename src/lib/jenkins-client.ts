@@ -77,6 +77,11 @@ export interface ConsoleLogResult {
   matches?: ConsoleLogMatch[]
 }
 
+// Square brackets are not valid unencoded in a URL query, and some Jenkins
+// instances and reverse proxies answer a raw tree=jobs[name] with HTTP 400.
+const treeQuery = (tree: string): string =>
+  `?${new URLSearchParams({ tree }).toString()}`
+
 export interface NormalizedBuild {
   id: string
   result: "SUCCESS" | "FAILURE" | "ABORTED" | "RUNNING" | string
@@ -212,8 +217,8 @@ export class JenkinsClient {
       visited.add(parentFullName)
 
       const path = parentFullName
-        ? `/job/${jobPath(parentFullName)}/api/json?tree=${tree}`
-        : `/api/json?tree=${tree}`
+        ? `/job/${jobPath(parentFullName)}/api/json${treeQuery(tree)}`
+        : `/api/json${treeQuery(tree)}`
       const data = await httpGetJson<any>(`${this.baseUrl}${path}`, this.req())
       const children: JenkinsJobApi[] = Array.isArray(data.jobs)
         ? data.jobs
@@ -261,7 +266,7 @@ export class JenkinsClient {
       // whole cost of the call. The tree names only what normalizeBuild reads,
       // and the range suffix makes Jenkins do the slicing. See issue #18.
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=${BUILD_TREE}{0,${limit}}`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json${treeQuery(`${BUILD_TREE}{0,${limit}}`)}`,
         this.req(),
       )
       if (!raw.builds) return []
@@ -297,7 +302,7 @@ export class JenkinsClient {
   private async jobExists(jobName: string): Promise<boolean> {
     try {
       await httpGetJson(
-        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=name`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json${treeQuery("name")}`,
         this.req(),
       )
       return true
@@ -310,7 +315,7 @@ export class JenkinsClient {
   async getLastBuild(jobName: string): Promise<NormalizedBuild> {
     try {
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/lastBuild/api/json?tree=${BUILD_FIELDS}`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/lastBuild/api/json${treeQuery(BUILD_FIELDS)}`,
         this.req(),
       )
       return this.normalizeBuild(raw)
@@ -329,7 +334,7 @@ export class JenkinsClient {
   ): Promise<NormalizedBuild> {
     try {
       const raw = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=${BUILD_FIELDS}`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json${treeQuery(BUILD_FIELDS)}`,
         this.req(),
       )
       return this.normalizeBuild(raw)
@@ -616,7 +621,7 @@ export class JenkinsClient {
   ): Promise<McpError> {
     try {
       await httpGetJson(
-        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=name`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json${treeQuery("name")}`,
         this.req(),
       )
       return Errors.buildNotFound(jobName, buildNumber)
@@ -638,7 +643,7 @@ export class JenkinsClient {
   ): Promise<McpError | null> {
     try {
       await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=number`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json${treeQuery("number")}`,
         this.req(),
       )
       return null
@@ -773,7 +778,7 @@ export class JenkinsClient {
   > {
     try {
       const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=artifacts[fileName,relativePath]`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json${treeQuery("artifacts[fileName,relativePath]")}`,
         this.req(),
       )
       if (!data || !Array.isArray(data.artifacts)) return []
@@ -1055,7 +1060,7 @@ export class JenkinsClient {
   > {
     try {
       const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/api/json?tree=property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/api/json${treeQuery("property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]")}`,
         this.req(),
       )
       const paramProp = (data.property ?? []).find(
@@ -1191,7 +1196,7 @@ export class JenkinsClient {
   async getBuildChanges(jobName: string, buildNumber: number): Promise<any> {
     try {
       const data = await httpGetJson<any>(
-        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json?tree=changeSet[items[author[fullName],msg,commitId,timestamp]]`,
+        `${this.baseUrl}/job/${jobPath(jobName)}/${buildNumber}/api/json${treeQuery("changeSet[items[author[fullName],msg,commitId,timestamp]]")}`,
         this.req(),
       )
       if (!data.changeSet || !data.changeSet.items) {
@@ -1385,7 +1390,7 @@ export class JenkinsClient {
     { name: string; url: string; jobs: { name: string; url: string }[] }[]
   > {
     const data = await httpGetJson<any>(
-      `${this.baseUrl}/api/json?tree=views[name,url,jobs[name,url]]`,
+      `${this.baseUrl}/api/json${treeQuery("views[name,url,jobs[name,url]]")}`,
       this.req(),
     )
     if (!Array.isArray(data.views)) return []
