@@ -1938,7 +1938,7 @@ describe("JenkinsClient — query shape (issue #18)", () => {
   })
 })
 
-describe("JenkinsClient — tree 查询编码", () => {
+describe("JenkinsClient — tree query encoding", () => {
   const cases: {
     name: string
     request: (client: JenkinsClient) => Promise<unknown>
@@ -1946,61 +1946,61 @@ describe("JenkinsClient — tree 查询编码", () => {
     tree: string
   }[] = [
     {
-      name: "任务列表",
+      name: "job list",
       request: (client) => client.listJobs(),
       path: "/api/json",
       tree: "jobs[name,url,_class,jobs[name]]",
     },
     {
-      name: "嵌套文件夹任务列表",
+      name: "nested folder job list",
       request: (client) => client.listJobs({ folder: "Team/Service A" }),
       path: "/job/Team/job/Service%20A/api/json",
       tree: "jobs[name,url,_class,jobs[name]]",
     },
     {
-      name: "任务搜索",
+      name: "job search",
       request: (client) => client.searchJobs("test"),
       path: "/api/json",
       tree: "jobs[name,url,_class,jobs[name]]",
     },
     {
-      name: "视图列表",
+      name: "view list",
       request: (client) => client.listViews(),
       path: "/api/json",
       tree: "views[name,url,jobs[name,url]]",
     },
     {
-      name: "最近构建及范围",
+      name: "recent builds with a range",
       request: (client) => client.getRecentBuilds("my-job", 3),
       path: "/job/my-job/api/json",
       tree: "builds[number,result,duration,timestamp,url,building]{0,3}",
     },
     {
-      name: "指定构建",
+      name: "a given build",
       request: (client) => client.getBuild("my-job", 55),
       path: "/job/my-job/55/api/json",
       tree: "number,result,duration,timestamp,url,building",
     },
     {
-      name: "最后构建",
+      name: "last build",
       request: (client) => client.getLastBuild("my-job"),
       path: "/job/my-job/lastBuild/api/json",
       tree: "number,result,duration,timestamp,url,building",
     },
     {
-      name: "构建产物",
+      name: "build artifacts",
       request: (client) => client.listArtifacts("my-job", 55),
       path: "/job/my-job/55/api/json",
       tree: "artifacts[fileName,relativePath]",
     },
     {
-      name: "参数定义",
+      name: "parameter definitions",
       request: (client) => client.getJobParameters("my-job"),
       path: "/job/my-job/api/json",
       tree: "property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]",
     },
     {
-      name: "构建变更",
+      name: "build changes",
       request: (client) => client.getBuildChanges("my-job", 55),
       path: "/job/my-job/55/api/json",
       tree: "changeSet[items[author[fullName],msg,commitId,timestamp]]",
@@ -2009,7 +2009,7 @@ describe("JenkinsClient — tree 查询编码", () => {
 
   beforeEach(() => vi.clearAllMocks())
 
-  it.each(cases)("$name 编码特殊字符并保留查询含义", async ({ request, path, tree }) => {
+  it.each(cases)("$name encodes special characters and keeps the query intact", async ({ request, path, tree }) => {
     const client = new JenkinsClient({
       baseUrl: "https://jenkins.example.com/jenkins",
     })
@@ -2021,7 +2021,7 @@ describe("JenkinsClient — tree 查询编码", () => {
     const requestUrl = vi.mocked(common.httpGetJson).mock.calls[0][0] as string
     const parsedUrl = new URL(requestUrl)
     expect(parsedUrl.pathname).toBe(`/jenkins${path}`)
-    // 在原始请求中消除特殊字符，解码后仍须是完整的 Jenkins tree 表达式。
+    // No raw special characters on the wire; decoded, it is still the whole Jenkins tree expression.
     expect(parsedUrl.search).not.toMatch(/[\[\]{},]/)
     expect(parsedUrl.searchParams.get("tree")).toBe(tree)
     expect([...parsedUrl.searchParams.keys()]).toEqual(["tree"])
