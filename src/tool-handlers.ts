@@ -25,6 +25,7 @@ import { getVersion } from "./tools/get-version.js"
 import { getPlugins } from "./tools/get-plugins.js"
 import { getBuildChanges } from "./tools/get-build-changes.js"
 import { getPipelineStages } from "./tools/get-pipeline-stages.js"
+import { diagnoseBuild } from "./tools/diagnose-build.js"
 import { replayBuild } from "./tools/replay-build.js"
 import { createJob } from "./tools/create-job.js"
 import { updateJobConfig } from "./tools/update-job-config.js"
@@ -56,6 +57,7 @@ const handlers: Record<string, ToolHandler> = {
   jenkins_get_test_results: getTestResults,
   jenkins_get_build_changes: getBuildChanges,
   jenkins_get_pipeline_stages: getPipelineStages,
+  jenkins_diagnose_build: diagnoseBuild,
   jenkins_replay_build: replayBuild,
   jenkins_get_queue: getQueue,
   jenkins_cancel_queue: cancelQueue,

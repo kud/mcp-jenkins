@@ -381,6 +381,47 @@ export const rawTools: Tool[] = [
     annotations: READ_ONLY,
   },
   {
+    name: "jenkins_diagnose_build",
+    description:
+      "Explain why a build failed, in one screen: each failing stage with its failing step, the error lines extracted from that step's log " +
+      '("line N of M"), any report links it printed, and the failed JUnit tests. Stages skipped after an earlier failure are collapsed into one line. ' +
+      "Returns the same reading as `jenkins why` in jenkins-cli, as `summary`. Name the build by jobName (and buildNumber, default the last build) or by its url.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jobName: {
+          type: "string",
+          description:
+            "Name of the Jenkins job; multibranch branches with a slash work as written (repo/feature/x). Required unless url is given",
+        },
+        buildNumber: {
+          type: "number",
+          description: "Build number (optional, defaults to the last build)",
+          minimum: 1,
+        },
+        url: {
+          type: "string",
+          description:
+            "A build or job URL as Jenkins links it, instead of jobName and buildNumber (for example https://jenkins.example.com/job/repo/job/feature%2Fx/12/)",
+        },
+        lines: {
+          type: "number",
+          description:
+            "Log lines kept per failing step for the tail (default: 80)",
+          minimum: 1,
+        },
+        tail: {
+          type: "boolean",
+          description:
+            "Show each failing step's last lines even when error lines were found (default: false)",
+          default: false,
+        },
+      },
+      required: [],
+    },
+    annotations: READ_ONLY,
+  },
+  {
     name: "jenkins_replay_build",
     description:
       "Replay/rerun a pipeline build, optionally with a modified pipeline script",

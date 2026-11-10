@@ -3,7 +3,7 @@ title: 🧰 Tools
 description: Full reference for all 38 Jenkins MCP tools, grouped by area.
 ---
 
-The server exposes **38 tools** covering ~95% of Jenkins API operations. Every tool
+The server exposes **39 tools** covering ~95% of Jenkins API operations. Every tool
 accepts an optional `instance` parameter to target a specific Jenkins server when
 [multiple instances](/projects/mcp-jenkins/docs/configuration) are configured.
 
@@ -24,7 +24,7 @@ accepts an optional `instance` parameter to target a specific Jenkins server whe
 | `jenkins_rename_job`         | Rename a job                                      |
 | `jenkins_copy_job`           | Copy a job within or across folders               |
 
-## 🔨 Build Operations (9 tools)
+## 🔨 Build Operations (10 tools)
 
 | Tool                          | Description                |
 | ----------------------------- | -------------------------- |
@@ -37,6 +37,7 @@ accepts an optional `instance` parameter to target a specific Jenkins server whe
 | `jenkins_get_console_log`     | Get build console output   |
 | `jenkins_get_build_changes`   | Get Git commits for build  |
 | `jenkins_get_pipeline_stages` | Get pipeline stage status  |
+| `jenkins_diagnose_build`      | Explain why a build failed |
 
 ## 🧪 Testing & Artifacts (3 tools)
 
@@ -80,4 +81,4 @@ accepts an optional `instance` parameter to target a specific Jenkins server whe
 | `jenkins_list_instances` | List all configured instances with their URLs |
 | `jenkins_safe_restart`   | Safely restart Jenkins (⚠️ requires confirm)  |
 
-**Total: 38 tools** covering ~95% of Jenkins API operations.
+**Total: 39 tools** covering ~95% of Jenkins API operations.
