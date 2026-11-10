@@ -43,9 +43,10 @@
   "author": "kud",
   "license": "MIT",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22"
   },
   "dependencies": {
+    "@kud/jenkins": "^2.6.0",
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {

@@ -1,4 +1,6 @@
-import { JenkinsClient } from "../lib/jenkins-client.js"
+import { JenkinsClient } from "../lib/client.js"
+import { Errors } from "../common/index.js"
+import { isNotFound } from "../lib/errors.js"
 
 export interface UpdateJobConfigInput {
   jobName: string
@@ -8,4 +10,11 @@ export interface UpdateJobConfigInput {
 export const updateJobConfig = async (
   client: JenkinsClient,
   input: UpdateJobConfigInput,
-) => client.updateJobConfig(input.jobName, input.configXml)
+) => {
+  try {
+    return await client.updateJobConfig(input.jobName, input.configXml)
+  } catch (err) {
+    if (isNotFound(err)) throw Errors.jobNotFound(input.jobName)
+    throw err
+  }
+}

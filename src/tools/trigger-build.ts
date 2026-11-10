@@ -1,15 +1,13 @@
-import { JenkinsClient } from '../lib/jenkins-client.js';
+import { JenkinsClient } from "../lib/client.js"
+import { triggerBuild as trigger } from "../lib/trigger.js"
 
 export interface TriggerBuildInput {
-  jobName: string;
-  params?: Record<string, any>;
-  useDefaults?: boolean;
+  jobName: string
+  params?: Record<string, any>
+  useDefaults?: boolean
 }
+
 export const triggerBuild = async (
   client: JenkinsClient,
-  input: TriggerBuildInput
-) => {
-  return client.triggerBuild(input.jobName, input.params, {
-    useDefaults: input.useDefaults,
-  });
-};
+  input: TriggerBuildInput,
+) => trigger(client, input.jobName, input.params, { useDefaults: input.useDefaults })

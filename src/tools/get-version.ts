@@ -1,7 +1,8 @@
-import { JenkinsClient } from '../lib/jenkins-client.js';
+import { JenkinsClient } from "../lib/client.js"
 
 export interface GetVersionInput {}
 
-export const getVersion = async (client: JenkinsClient, _input: GetVersionInput) => {
-  return client.getVersion();
-};
+export const getVersion = async (
+  client: JenkinsClient,
+  _input: GetVersionInput,
+) => client.getVersion()

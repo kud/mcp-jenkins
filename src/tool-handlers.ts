@@ -1,4 +1,5 @@
-import { JenkinsClient } from "./lib/jenkins-client.js"
+import { JenkinsClient } from "./lib/client.js"
+import { toMcpError } from "./lib/errors.js"
 import { getJobStatus } from "./tools/get-job-status.js"
 import { getJobParameters } from "./tools/get-job-parameters.js"
 import { getBuildStatus } from "./tools/get-build-status.js"
@@ -39,7 +40,7 @@ import { safeRestart } from "./tools/safe-restart.js"
 
 // Map tool names to handler functions
 export type ToolHandler = (client: JenkinsClient, input: any) => Promise<any>
-export const toolHandlers: Record<string, ToolHandler> = {
+const handlers: Record<string, ToolHandler> = {
   jenkins_list_jobs: listJobs,
   jenkins_search_jobs: searchJobs,
   jenkins_get_job_status: getJobStatus,
@@ -78,3 +79,18 @@ export const toolHandlers: Record<string, ToolHandler> = {
   jenkins_cancel_quiet_down: cancelQuietDown,
   jenkins_safe_restart: safeRestart,
 }
+
+// Every handler shares one error vocabulary: an expired credential or a
+// deadline reads the same whichever endpoint hit it.
+export const toolHandlers: Record<string, ToolHandler> = Object.fromEntries(
+  Object.entries(handlers).map(([name, handler]) => [
+    name,
+    async (client: JenkinsClient, input: any) => {
+      try {
+        return await handler(client, input)
+      } catch (err) {
+        throw toMcpError(err)
+      }
+    },
+  ]),
+)

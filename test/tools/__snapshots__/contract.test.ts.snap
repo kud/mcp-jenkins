@@ -159,7 +159,7 @@ exports[`instance > jenkins_get_view 1`] = `
 exports[`instance > jenkins_list_nodes 1`] = `
 [
   {
-    "busyExecutors": 2,
+    "busyExecutors": 1,
     "idle": false,
     "name": "built-in",
     "numExecutors": 2,

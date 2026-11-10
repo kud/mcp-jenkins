@@ -1,4 +1,10 @@
-import { DEFAULT_TIMEOUT_MS } from "./http.js"
+// Every request this server makes is bounded by one deadline, and this is it
+// when no caller overrides it. Raised from 10 s to 30 s in issue #18's
+// aftermath: a large or busy Jenkins can spend longer than 10 s just loading a
+// build record from disk, which surfaces to the caller as this server timing
+// out rather than as anything Jenkins said. Configurable process-wide via
+// MCP_JENKINS_TIMEOUT_MS or --timeout-ms; 10000 restores the old deadline.
+export const DEFAULT_TIMEOUT_MS = 30000
 
 export interface JenkinsEnv {
   JENKINS_URL: string

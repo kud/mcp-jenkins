@@ -1,9 +1,13 @@
-import { JenkinsClient } from '../lib/jenkins-client.js';
+import { JenkinsClient } from "../lib/client.js"
 
 export interface CancelQueueInput {
-  queueId: number;
+  queueId: number
 }
 
-export const cancelQueue = async (client: JenkinsClient, input: CancelQueueInput) => {
-  return client.cancelQueue(input.queueId);
-};
+export const cancelQueue = async (
+  client: JenkinsClient,
+  input: CancelQueueInput,
+) => {
+  await client.cancelQueueItem(input.queueId)
+  return { queueId: input.queueId, cancelled: true }
+}

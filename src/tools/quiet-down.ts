@@ -1,4 +1,4 @@
-import { JenkinsClient } from "../lib/jenkins-client.js"
+import { JenkinsClient } from "../lib/client.js"
 import { McpError } from "../common/index.js"
 
 export interface QuietDownInput {

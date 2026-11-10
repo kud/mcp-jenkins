@@ -1,7 +1,11 @@
-import { JenkinsClient } from '../lib/jenkins-client.js';
+import { JenkinsClient } from "../lib/client.js"
+import { getLastBuild } from "../lib/builds.js"
 
-export interface GetJobStatusInput { jobName: string }
-export const getJobStatus = async (client: JenkinsClient, input: GetJobStatusInput) => {
-  const build = await client.getLastBuild(input.jobName);
-  return build;
-};
+export interface GetJobStatusInput {
+  jobName: string
+}
+
+export const getJobStatus = async (
+  client: JenkinsClient,
+  input: GetJobStatusInput,
+) => getLastBuild(client, input.jobName)

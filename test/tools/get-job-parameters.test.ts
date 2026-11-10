@@ -1,137 +1,46 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
+import { installFakeJenkins } from "../helpers/fake-jenkins.js"
+import { makeClient } from "../helpers/client.js"
 import { getJobParameters } from "../../src/tools/get-job-parameters.js"
-import { JenkinsClient } from "../../src/lib/jenkins-client.js"
+
+const job = (parameters?: unknown[]) =>
+  installFakeJenkins([
+    { segments: ["deploy-job"], _class: "org.jenkinsci.plugins.workflow.job.WorkflowJob", parameters },
+  ])
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe("getJobParameters tool", () => {
-  let mockClient: JenkinsClient
-
-  beforeEach(() => {
-    mockClient = { getJobParameters: vi.fn() } as any
-  })
-
   it("returns empty parameters for a non-parameterised job", async () => {
-    vi.mocked(mockClient.getJobParameters).mockResolvedValue({
-      jobName: "simple-job",
+    job()
+    expect(await getJobParameters(makeClient(), { jobName: "deploy-job" })).toEqual({
+      jobName: "deploy-job",
       parameters: [],
     })
-
-    const result = await getJobParameters(mockClient, { jobName: "simple-job" })
-
-    expect(mockClient.getJobParameters).toHaveBeenCalledWith("simple-job")
-    expect(result.parameters).toEqual([])
   })
 
-  it("returns string parameter with default value", async () => {
-    vi.mocked(mockClient.getJobParameters).mockResolvedValue({
-      jobName: "deploy-job",
-      parameters: [
-        {
-          name: "BRANCH",
-          type: "string",
-          description: "Branch to deploy",
-          defaultValue: "main",
-        },
-      ],
-    })
-
-    const result = await getJobParameters(mockClient, { jobName: "deploy-job" })
-
-    expect(result.parameters).toHaveLength(1)
-    expect(result.parameters[0]).toMatchObject({
-      name: "BRANCH",
-      type: "string",
-      defaultValue: "main",
-    })
-  })
-
-  it("returns choice parameter with choices array", async () => {
-    vi.mocked(mockClient.getJobParameters).mockResolvedValue({
-      jobName: "env-job",
-      parameters: [
-        {
-          name: "ENVIRONMENT",
-          type: "choice",
-          description: "Target environment",
-          defaultValue: "staging",
-          choices: ["staging", "production", "dev"],
-        },
-      ],
-    })
-
-    const result = await getJobParameters(mockClient, { jobName: "env-job" })
-
-    expect(result.parameters[0].choices).toEqual([
-      "staging",
-      "production",
-      "dev",
+  it("shortens each type and fills absent fields", async () => {
+    job([
+      { name: "BRANCH", type: "StringParameterDefinition", description: "Branch", defaultParameterValue: { value: "main" } },
+      { name: "FORCE", _class: "hudson.model.BooleanParameterDefinition", defaultParameterValue: { value: false } },
+      { name: "SECRET", type: "PasswordParameterDefinition" },
+    ])
+    const { parameters } = await getJobParameters(makeClient(), { jobName: "deploy-job" })
+    expect(parameters).toEqual([
+      { name: "BRANCH", type: "string", description: "Branch", defaultValue: "main" },
+      { name: "FORCE", type: "boolean", description: "", defaultValue: false },
+      { name: "SECRET", type: "password", description: "", defaultValue: null },
     ])
   })
 
-  it("returns boolean parameter", async () => {
-    vi.mocked(mockClient.getJobParameters).mockResolvedValue({
-      jobName: "flag-job",
-      parameters: [
-        {
-          name: "DRY_RUN",
-          type: "boolean",
-          description: "Skip actual deployment",
-          defaultValue: false,
-        },
-      ],
-    })
-
-    const result = await getJobParameters(mockClient, { jobName: "flag-job" })
-
-    expect(result.parameters[0]).toMatchObject({
-      name: "DRY_RUN",
-      type: "boolean",
-      defaultValue: false,
-    })
+  it("keeps choices for a choice parameter", async () => {
+    job([{ name: "ENV", type: "ChoiceParameterDefinition", choices: ["dev", "prod"], defaultParameterValue: { value: "dev" } }])
+    const { parameters } = await getJobParameters(makeClient(), { jobName: "deploy-job" })
+    expect(parameters[0].choices).toEqual(["dev", "prod"])
   })
 
-  it("returns multiple mixed parameters", async () => {
-    vi.mocked(mockClient.getJobParameters).mockResolvedValue({
-      jobName: "multi-job",
-      parameters: [
-        {
-          name: "VERSION",
-          type: "string",
-          description: "",
-          defaultValue: null,
-        },
-        {
-          name: "DEPLOY",
-          type: "boolean",
-          description: "",
-          defaultValue: true,
-        },
-        {
-          name: "ENV",
-          type: "choice",
-          description: "",
-          defaultValue: "staging",
-          choices: ["staging", "prod"],
-        },
-      ],
-    })
-
-    const result = await getJobParameters(mockClient, { jobName: "multi-job" })
-
-    expect(result.parameters).toHaveLength(3)
-    expect(result.parameters.map((p) => p.name)).toEqual([
-      "VERSION",
-      "DEPLOY",
-      "ENV",
-    ])
-  })
-
-  it("propagates errors from client", async () => {
-    vi.mocked(mockClient.getJobParameters).mockRejectedValue(
-      new Error("Job not found: ghost-job"),
-    )
-
-    await expect(
-      getJobParameters(mockClient, { jobName: "ghost-job" }),
-    ).rejects.toThrow("Job not found: ghost-job")
+  it("names a missing job", async () => {
+    job()
+    await expect(getJobParameters(makeClient(), { jobName: "nope" })).rejects.toThrow("Job not found: nope")
   })
 })

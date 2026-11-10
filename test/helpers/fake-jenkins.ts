@@ -278,7 +278,7 @@ export const installFakeJenkins = (
         j.segments.length === parent.length + 1 &&
         parent.every((s, i) => j.segments[i] === s),
     )
-  const jobSummary = (j: FakeJob) => ({
+  const jobSummary = (j: FakeJob): Record<string, unknown> => ({
     name: j.segments[j.segments.length - 1],
     url: urlOfJob(j),
     color: "blue",
@@ -286,10 +286,7 @@ export const installFakeJenkins = (
     ...(j._class === WORKFLOW
       ? {}
       : {
-          jobs: children(j.segments).map((c) => ({
-            name: c.segments.at(-1),
-            url: urlOfJob(c),
-          })),
+          jobs: children(j.segments).map(jobSummary),
         }),
   })
   const buildRecord = (j: FakeJob, b: FakeBuild) => ({

@@ -1,6 +1,13 @@
-import { JenkinsClient, NormalizedBuild } from '../lib/jenkins-client.js';
+import { JenkinsClient } from "../lib/client.js"
+import { getRecentBuilds as readRecentBuilds, NormalizedBuild } from "../lib/builds.js"
 
-export interface GetRecentBuildsInput { jobName: string; limit?: number }
-export const getRecentBuilds = async (client: JenkinsClient, input: GetRecentBuildsInput): Promise<NormalizedBuild[]> => {
-  return client.getRecentBuilds(input.jobName, input.limit ?? 5);
-};
+export interface GetRecentBuildsInput {
+  jobName: string
+  limit?: number
+}
+
+export const getRecentBuilds = async (
+  client: JenkinsClient,
+  input: GetRecentBuildsInput,
+): Promise<NormalizedBuild[]> =>
+  readRecentBuilds(client, input.jobName, input.limit ?? 5)

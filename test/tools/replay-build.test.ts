@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { replayBuild } from "../../src/tools/replay-build.js"
-import { JenkinsClient } from "../../src/lib/jenkins-client.js"
+import { JenkinsClient } from "../../src/lib/client.js"
 
 describe("replayBuild tool", () => {
   let mockClient: JenkinsClient

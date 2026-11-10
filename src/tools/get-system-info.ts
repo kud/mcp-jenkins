@@ -1,7 +1,8 @@
-import { JenkinsClient } from '../lib/jenkins-client.js';
+import { JenkinsClient } from "../lib/client.js"
 
 export interface GetSystemInfoInput {}
 
-export const getSystemInfo = async (client: JenkinsClient, _input: GetSystemInfoInput) => {
-  return client.getSystemInfo();
-};
+export const getSystemInfo = async (
+  client: JenkinsClient,
+  _input: GetSystemInfoInput,
+) => client.getSystemInfo()

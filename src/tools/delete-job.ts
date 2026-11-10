@@ -1,9 +1,17 @@
-import { JenkinsClient } from '../lib/jenkins-client.js';
+import { JenkinsClient } from "../lib/client.js"
+import { Errors } from "../common/index.js"
+import { isNotFound } from "../lib/errors.js"
 
 export interface DeleteJobInput {
-  jobName: string;
+  jobName: string
 }
 
 export const deleteJob = async (client: JenkinsClient, input: DeleteJobInput) => {
-  return client.deleteJob(input.jobName);
-};
+  try {
+    await client.deleteJob(input.jobName)
+  } catch (err) {
+    if (isNotFound(err)) throw Errors.jobNotFound(input.jobName)
+    throw err
+  }
+  return { jobName: input.jobName, deleted: true }
+}

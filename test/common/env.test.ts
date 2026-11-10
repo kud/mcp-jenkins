@@ -3,7 +3,7 @@ import {
   loadToolFilter,
   loadAllJenkinsInstances,
 } from "../../src/common/env.js"
-import { DEFAULT_TIMEOUT_MS } from "../../src/common/http.js"
+import { DEFAULT_TIMEOUT_MS } from "../../src/common/env.js"
 
 describe("loadToolFilter", () => {
   afterEach(() => {
