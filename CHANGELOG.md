@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 
 ---
 
+## [4.0.0] — 2026-11-10
+
+### 💥 Breaking Changes
+
+- Node.js 22 or later is now required (it was 20). Upgrade Node before updating ([#634a821](https://github.com/kud/mcp-jenkins/commit/634a821810a95b517c127bb50cc669e7cdc1bc68)).
+- The in-repo `JenkinsClient` (`dist/lib/jenkins-client.js`) is gone, replaced by the shared `@kud/jenkins` client. Anything that deep-imported it must use `@kud/jenkins` instead; the MCP tools themselves are unchanged ([#634a821](https://github.com/kud/mcp-jenkins/commit/634a821810a95b517c127bb50cc669e7cdc1bc68)).
+
+### ✨ Features
+
+- New `jenkins_diagnose_build` tool explains a failed build in one call: failing stages, error lines from their logs, report links and failed JUnit tests. The server now offers 39 tools ([#af22d46](https://github.com/kud/mcp-jenkins/commit/af22d4672bddb5b17753ef6b4afe934538f73ef1)).
+
+### 🐛 Bug Fixes
+
+- Multibranch branches with a slash in the name (`repo/feature/x`) now work across every tool instead of returning 404 ([#634a821](https://github.com/kud/mcp-jenkins/commit/634a821810a95b517c127bb50cc669e7cdc1bc68)).
+- `jenkins_list_nodes` now reports the real number of busy executors rather than a figure inferred from an unrelated memory monitor ([#634a821](https://github.com/kud/mcp-jenkins/commit/634a821810a95b517c127bb50cc669e7cdc1bc68)).
+
+<details>
+<summary>🔧 Internal changes (3 commits)</summary>
+
+- Requests now go through `@kud/jenkins` (^2.7.0), with the bearer token passed as a client option and anonymous clients sending no `Authorization` header ([#bc990ab](https://github.com/kud/mcp-jenkins/commit/bc990ab21d92c137fa141107499e23f021cdc6da)).
+- Contract tests now pin every tool's output and errors against an in-memory fake Jenkins ([#fb648f8](https://github.com/kud/mcp-jenkins/commit/fb648f81a436b5b20cfdadbec2574959a37a9fe7)).
+- Refreshed the application icon ([#0a28f6e](https://github.com/kud/mcp-jenkins/commit/0a28f6eaae0bd54c4bfd162bc63e96e2bed8e783)).
+
+</details>
+
+---
+
 ## [3.0.1] — 2026-10-28
 
 ### 🐛 Bug Fixes
