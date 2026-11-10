@@ -1,0 +1,256 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`builds > jenkins_delete_build 1`] = `
+{
+  "buildNumber": 2,
+  "deleted": true,
+  "jobName": "app",
+}
+`;
+
+exports[`builds > jenkins_get_test_results, and a build without a report 1`] = `
+{
+  "buildNumber": 3,
+  "duration": 1.5,
+  "failedTests": 2,
+  "jobName": "app",
+  "passedTests": 1,
+  "skippedTests": 0,
+  "suites": [
+    {
+      "cases": [
+        {
+          "className": "app.Auth",
+          "name": "logs in",
+          "status": "PASSED",
+        },
+        {
+          "className": "app.Auth",
+          "errorDetails": "expected 401, got 200",
+          "errorStackTrace": "AssertionError
+  at auth.test.ts:12",
+          "name": "rejects bad token",
+          "status": "FAILED",
+        },
+        {
+          "className": "app.Cart",
+          "errorDetails": "expected 30, got 29",
+          "name": "totals",
+          "status": "REGRESSION",
+        },
+      ],
+      "name": "suite",
+    },
+  ],
+  "totalTests": 3,
+}
+`;
+
+exports[`builds > jenkins_replay_build 1`] = `
+{
+  "buildNumber": 3,
+  "jobName": "app",
+  "queueUrl": "https://jenkins.example.com/queue/item/43/",
+}
+`;
+
+exports[`builds > jenkins_stop_build 1`] = `
+{
+  "buildNumber": 1,
+  "jobName": "app",
+  "stopped": true,
+}
+`;
+
+exports[`instance > jenkins_cancel_queue 1`] = `
+{
+  "cancelled": true,
+  "queueId": 41,
+}
+`;
+
+exports[`instance > jenkins_cancel_quiet_down 1`] = `
+{
+  "quietingDown": false,
+}
+`;
+
+exports[`instance > jenkins_get_node 1`] = `
+{
+  "assignedLabels": [
+    "linux",
+    "agent-1",
+  ],
+  "idle": true,
+  "monitorData": {
+    "hudson.node_monitors.ArchitectureMonitor": "Linux (amd64)",
+  },
+  "name": "agent-1",
+  "numExecutors": 4,
+  "offline": true,
+  "offlineCauseReason": "maintenance",
+  "temporarilyOffline": true,
+}
+`;
+
+exports[`instance > jenkins_get_plugins 1`] = `
+[
+  {
+    "active": true,
+    "enabled": true,
+    "hasUpdate": false,
+    "longName": "Git plugin",
+    "shortName": "git",
+    "version": "5.2.1",
+  },
+]
+`;
+
+exports[`instance > jenkins_get_queue 1`] = `
+[
+  {
+    "blocked": false,
+    "buildable": true,
+    "id": 41,
+    "inQueueSince": "2026-11-01T09:00:00.000Z",
+    "stuck": false,
+    "task": {
+      "name": "app",
+      "url": "https://jenkins.example.com/job/app/",
+    },
+    "why": "Waiting for next available executor",
+  },
+]
+`;
+
+exports[`instance > jenkins_get_system_info 1`] = `
+{
+  "mode": "NORMAL",
+  "nodeDescription": "the built-in node",
+  "nodeName": "",
+  "numExecutors": 2,
+  "quietingDown": false,
+  "useCrumbs": true,
+  "useSecurity": true,
+}
+`;
+
+exports[`instance > jenkins_get_version 1`] = `
+{
+  "version": "2.462.3",
+}
+`;
+
+exports[`instance > jenkins_get_view 1`] = `
+{
+  "description": "Everything",
+  "jobs": [
+    {
+      "color": "red",
+      "name": "app",
+      "url": "https://jenkins.example.com/job/app/",
+    },
+  ],
+  "name": "all",
+  "url": "https://jenkins.example.com/",
+}
+`;
+
+exports[`instance > jenkins_list_nodes 1`] = `
+[
+  {
+    "busyExecutors": 2,
+    "idle": false,
+    "name": "built-in",
+    "numExecutors": 2,
+    "offline": false,
+    "offlineCauseReason": "",
+    "temporarilyOffline": false,
+  },
+]
+`;
+
+exports[`instance > jenkins_list_views 1`] = `
+[
+  {
+    "jobs": [
+      {
+        "name": "app",
+        "url": "https://jenkins.example.com/job/app/",
+      },
+    ],
+    "name": "all",
+    "url": "https://jenkins.example.com/",
+  },
+]
+`;
+
+exports[`instance > jenkins_quiet_down 1`] = `
+{
+  "quietingDown": true,
+}
+`;
+
+exports[`instance > jenkins_safe_restart 1`] = `
+{
+  "restarting": true,
+}
+`;
+
+exports[`instance > jenkins_toggle_node_offline 1`] = `
+{
+  "nodeName": "agent-1",
+  "toggledOffline": true,
+}
+`;
+
+exports[`jobs > jenkins_copy_job 1`] = `
+{
+  "copied": true,
+  "fromName": "app",
+  "newName": "Team/copy",
+}
+`;
+
+exports[`jobs > jenkins_create_job 1`] = `
+{
+  "created": true,
+  "jobName": "Team/new",
+}
+`;
+
+exports[`jobs > jenkins_delete_job 1`] = `
+{
+  "deleted": true,
+  "jobName": "app",
+}
+`;
+
+exports[`jobs > jenkins_disable_job 1`] = `
+{
+  "disabled": true,
+  "jobName": "app",
+}
+`;
+
+exports[`jobs > jenkins_enable_job 1`] = `
+{
+  "enabled": true,
+  "jobName": "app",
+}
+`;
+
+exports[`jobs > jenkins_rename_job 1`] = `
+{
+  "newName": "app2",
+  "oldName": "app",
+  "renamed": true,
+}
+`;
+
+exports[`jobs > jenkins_update_job_config 1`] = `
+{
+  "jobName": "app",
+  "updated": true,
+}
+`;
