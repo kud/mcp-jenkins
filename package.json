@@ -46,7 +46,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@kud/jenkins": "^2.6.0",
+    "@kud/jenkins": "^2.7.0",
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {

@@ -5,9 +5,9 @@ import { isNotFound } from "./errors.js"
 // list, a six-field build record), so it goes through the core's `tree()`,
 // which takes a ready-made path. A job name's slashes are folder boundaries
 // in that path, except inside a multibranch project, where a branch such as
-// "feature/x" is one segment. Only the core knows how to tell them apart: it
-// walks the hierarchy reading each level's `_class`.
-type PathResolver = { _resolveMultibranchPath(job: string): Promise<string> }
+// "feature/x" is one segment. The core tells them apart (resolveJobPath walks
+// the hierarchy reading each level's `_class`); this remembers which names
+// needed it, so a branch does not pay a 404 on every call.
 
 const resolved = new WeakMap<JenkinsClient, Map<string, string>>()
 
@@ -35,9 +35,7 @@ export const withJobPath = async <T>(
     return await request(plain)
   } catch (err) {
     if (!isNotFound(err) || !job.includes("/")) throw err
-    const real = await (
-      client as unknown as PathResolver
-    )._resolveMultibranchPath(job)
+    const real = await client.resolveJobPath(job)
     if (real === plain) throw err
     cache.set(job, real)
     return request(real)

@@ -3,20 +3,23 @@ import type { JenkinsEnv } from "../common/index.js"
 
 export { JenkinsClient }
 
-// One core client per configured instance. The core builds a Basic header
-// from a user and token, and sends nothing when both are empty, which is
-// exactly the anonymous case. A bearer token has no constructor slot, so it
-// replaces the header the core would otherwise send: `authHeader` is the
-// field every request reads.
+// One core client per configured instance. Anonymous sends no Authorization
+// header at all; otherwise a bearer token wins over a user and API token, as
+// the environment loader has always ranked them.
 export const createJenkinsClient = (env: JenkinsEnv): JenkinsClient => {
-  const basic = !env.JENKINS_ANONYMOUS && !env.JENKINS_BEARER_TOKEN
-  const client = new JenkinsClient(
+  if (env.JENKINS_ANONYMOUS)
+    return new JenkinsClient(env.JENKINS_URL, "", "", {
+      timeout: env.JENKINS_TIMEOUT_MS,
+    })
+  return new JenkinsClient(
     env.JENKINS_URL,
-    basic ? (env.JENKINS_USER ?? "") : "",
-    basic ? (env.JENKINS_API_TOKEN ?? "") : "",
-    { timeout: env.JENKINS_TIMEOUT_MS },
+    env.JENKINS_USER ?? "",
+    env.JENKINS_API_TOKEN ?? "",
+    {
+      timeout: env.JENKINS_TIMEOUT_MS,
+      auth: env.JENKINS_BEARER_TOKEN
+        ? { bearer: env.JENKINS_BEARER_TOKEN }
+        : undefined,
+    },
   )
-  if (!env.JENKINS_ANONYMOUS && env.JENKINS_BEARER_TOKEN)
-    client.authHeader = "Bearer " + env.JENKINS_BEARER_TOKEN
-  return client
 }

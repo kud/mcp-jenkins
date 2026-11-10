@@ -70,3 +70,19 @@ describe("error mapping", () => {
     expect(toMcpError(other)).toBe(other)
   })
 })
+
+describe("writes", () => {
+  it("carry the crumb and the session cookie it was issued with", async () => {
+    const fake = installFakeJenkins()
+    const client = createJenkinsClient({
+      JENKINS_URL: BASE_URL,
+      JENKINS_BEARER_TOKEN: "abc",
+      JENKINS_TIMEOUT_MS: 30000,
+    })
+    await toolHandlers.jenkins_trigger_build(client, { jobName: "app" })
+    const post = fake.requests.find((r) => r.method === "POST")!
+    expect(post.headers["jenkins-crumb"]).toBe("c0ffee")
+    expect(post.headers.cookie).toBe("JSESSIONID.x=sess1")
+    expect(post.headers.authorization).toBe("Bearer abc")
+  })
+})
