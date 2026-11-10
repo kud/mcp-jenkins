@@ -39,7 +39,7 @@
     "type": "git",
     "url": "https://github.com/kud/mcp-jenkins.git"
   },
-  "homepage": "https://kud.github.io/mcp-jenkins",
+  "homepage": "https://kud.io/projects/mcp-jenkins",
   "author": "kud",
   "license": "MIT",
   "engines": {
