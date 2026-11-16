@@ -286,6 +286,35 @@ export const rawTools: Tool[] = [
     annotations: READ_ONLY,
   },
   {
+    name: "jenkins_download_artifact",
+    description:
+      "Save a build artifact to a new local file. The absolute destination path must not already exist.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        jobName: {
+          type: "string",
+          description: "Name of the Jenkins job",
+        },
+        buildNumber: {
+          type: "number",
+          description: "Build number",
+        },
+        relativePath: {
+          type: "string",
+          description: 'Relative path to the artifact (e.g., "dist/app.jar")',
+        },
+        destinationPath: {
+          type: "string",
+          description:
+            "Absolute local path for the new file; existing files are not overwritten",
+        },
+      },
+      required: ["jobName", "buildNumber", "relativePath", "destinationPath"],
+    },
+    annotations: WRITE,
+  },
+  {
     name: "jenkins_stop_build",
     description: "Stop/abort a running build",
     inputSchema: {

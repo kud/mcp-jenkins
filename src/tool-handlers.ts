@@ -8,7 +8,10 @@ import { triggerBuild } from "./tools/trigger-build.js"
 import { listJobs } from "./tools/list-jobs.js"
 import { getRecentBuilds } from "./tools/get-recent-builds.js"
 import { listArtifacts } from "./tools/list-artifacts.js"
-import { getArtifact } from "./tools/get-artifact.js"
+import {
+  downloadArtifactToFile,
+  getArtifact,
+} from "./tools/get-artifact.js"
 import { searchJobs } from "./tools/search-jobs.js"
 import { stopBuild } from "./tools/stop-build.js"
 import { deleteBuild } from "./tools/delete-build.js"
@@ -52,6 +55,7 @@ const handlers: Record<string, ToolHandler> = {
   jenkins_trigger_build: triggerBuild,
   jenkins_list_artifacts: listArtifacts,
   jenkins_get_artifact: getArtifact,
+  jenkins_download_artifact: downloadArtifactToFile,
   jenkins_stop_build: stopBuild,
   jenkins_delete_build: deleteBuild,
   jenkins_get_test_results: getTestResults,
