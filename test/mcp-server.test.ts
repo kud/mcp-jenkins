@@ -56,7 +56,7 @@ describe("MCP Server", () => {
   })
 
   describe("Tool Registration", () => {
-    it("should have all 39 Jenkins tools defined", () => {
+    it("should have all 40 Jenkins tools defined", () => {
       // Verify expected tool names exist
       const expectedTools = [
         "jenkins_list_jobs",
@@ -69,6 +69,7 @@ describe("MCP Server", () => {
         "jenkins_trigger_build",
         "jenkins_list_artifacts",
         "jenkins_get_artifact",
+        "jenkins_download_artifact",
         "jenkins_stop_build",
         "jenkins_delete_build",
         "jenkins_get_test_results",
@@ -100,7 +101,7 @@ describe("MCP Server", () => {
         "jenkins_list_instances",
       ]
 
-      expect(expectedTools).toHaveLength(39)
+      expect(expectedTools).toHaveLength(40)
       expect(expectedTools).toContain("jenkins_get_job_status")
       expect(expectedTools).toContain("jenkins_trigger_build")
       expect(expectedTools).toContain("jenkins_list_jobs")
