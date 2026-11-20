@@ -46,14 +46,6 @@ exports[`builds > jenkins_get_test_results, and a build without a report 1`] = `
 }
 `;
 
-exports[`builds > jenkins_replay_build 1`] = `
-{
-  "buildNumber": 3,
-  "jobName": "app",
-  "queueUrl": "https://jenkins.example.com/queue/item/43/",
-}
-`;
-
 exports[`builds > jenkins_stop_build 1`] = `
 {
   "buildNumber": 1,

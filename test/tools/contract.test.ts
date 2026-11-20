@@ -60,9 +60,8 @@ describe("jobs", () => {
   })
 
   it("jenkins_list_jobs lists a folder", async () => {
-    expect(
-      await call("jenkins_list_jobs", { folder: "Team" }),
-    ).toMatchInlineSnapshot(`
+    expect(await call("jenkins_list_jobs", { folder: "Team" }))
+      .toMatchInlineSnapshot(`
       [
         {
           "name": "Team/svc",
@@ -105,9 +104,8 @@ describe("jobs", () => {
   })
 
   it("jenkins_list_jobs names a missing folder", async () => {
-    expect(
-      await failure(call("jenkins_list_jobs", { folder: "Nope" })),
-    ).toMatchInlineSnapshot(`
+    expect(await failure(call("jenkins_list_jobs", { folder: "Nope" })))
+      .toMatchInlineSnapshot(`
       {
         "code": "JOB_NOT_FOUND",
         "message": "Job not found: Nope",
@@ -116,9 +114,8 @@ describe("jobs", () => {
   })
 
   it("jenkins_search_jobs filters by substring", async () => {
-    expect(
-      await call("jenkins_search_jobs", { query: "SV", recursive: true }),
-    ).toMatchInlineSnapshot(`
+    expect(await call("jenkins_search_jobs", { query: "SV", recursive: true }))
+      .toMatchInlineSnapshot(`
       [
         {
           "name": "Team/svc",
@@ -130,9 +127,8 @@ describe("jobs", () => {
   })
 
   it("jenkins_get_job_parameters", async () => {
-    expect(
-      await call("jenkins_get_job_parameters", { jobName: "deploy" }),
-    ).toMatchInlineSnapshot(`
+    expect(await call("jenkins_get_job_parameters", { jobName: "deploy" }))
+      .toMatchInlineSnapshot(`
       {
         "jobName": "deploy",
         "parameters": [
@@ -158,9 +154,8 @@ describe("jobs", () => {
   })
 
   it("jenkins_get_job_config", async () => {
-    expect(
-      await call("jenkins_get_job_config", { jobName: "app" }),
-    ).toMatchInlineSnapshot(`
+    expect(await call("jenkins_get_job_config", { jobName: "app" }))
+      .toMatchInlineSnapshot(`
       {
         "config": "<project><description>app</description></project>",
         "jobName": "app",
@@ -183,9 +178,8 @@ describe("jobs", () => {
 
 describe("builds", () => {
   it("jenkins_get_job_status returns the last build", async () => {
-    expect(
-      await call("jenkins_get_job_status", { jobName: "app" }),
-    ).toMatchInlineSnapshot(`
+    expect(await call("jenkins_get_job_status", { jobName: "app" }))
+      .toMatchInlineSnapshot(`
       {
         "durationMs": 61000,
         "id": "3",
@@ -197,17 +191,15 @@ describe("builds", () => {
   })
 
   it("jenkins_get_job_status tells a never-built job from a missing one", async () => {
-    expect(
-      await failure(call("jenkins_get_job_status", { jobName: "empty" })),
-    ).toMatchInlineSnapshot(`
+    expect(await failure(call("jenkins_get_job_status", { jobName: "empty" })))
+      .toMatchInlineSnapshot(`
       {
         "code": "NO_BUILDS",
         "message": "Job empty has no builds yet",
       }
     `)
-    expect(
-      await failure(call("jenkins_get_job_status", { jobName: "nope" })),
-    ).toMatchInlineSnapshot(`
+    expect(await failure(call("jenkins_get_job_status", { jobName: "nope" })))
+      .toMatchInlineSnapshot(`
       {
         "code": "JOB_NOT_FOUND",
         "message": "Job not found: nope",
@@ -430,9 +422,40 @@ describe("builds", () => {
   it.each([
     ["jenkins_stop_build", { jobName: "app", buildNumber: 1 }],
     ["jenkins_delete_build", { jobName: "app", buildNumber: 2 }],
-    ["jenkins_replay_build", { jobName: "app", buildNumber: 3 }],
   ])("%s", async (tool, input) => {
     expect(await call(tool, input)).toMatchSnapshot()
+  })
+
+  it("jenkins_replay_build treats Jenkins' 302 to the job page as success", async () => {
+    expect(
+      await call("jenkins_replay_build", { jobName: "app", buildNumber: 3 }),
+    ).toMatchInlineSnapshot(`
+      {
+        "buildNumber": 3,
+        "expectedBuildNumber": 4,
+        "jobName": "app",
+        "jobUrl": "https://jenkins.example.com/job/app/",
+        "replayed": true,
+      }
+    `)
+  })
+
+  it("jenkins_replay_build posts the given mainScript to replay/run as a Stapler form", async () => {
+    const script =
+      'pipeline { agent any; stages { stage("x") { steps { echo "replayed" } } } }'
+    await call("jenkins_replay_build", {
+      jobName: "app",
+      buildNumber: 3,
+      mainScript: script,
+    })
+    const post = fake.requests.find((r) => r.method === "POST")!
+    expect(post.path).toBe("/job/app/3/replay/run")
+    expect(post.headers["content-type"]).toBe(
+      "application/x-www-form-urlencoded",
+    )
+    const form = new URLSearchParams(post.body)
+    expect(form.get("mainScript")).toBe(script)
+    expect(JSON.parse(form.get("json")!)).toEqual({ mainScript: script })
   })
 
   it("jenkins_stop_build names a missing build", async () => {
@@ -611,9 +634,8 @@ describe("console log", () => {
 
 describe("trigger", () => {
   it("triggers a job without parameters", async () => {
-    expect(
-      await call("jenkins_trigger_build", { jobName: "app" }),
-    ).toMatchInlineSnapshot(`
+    expect(await call("jenkins_trigger_build", { jobName: "app" }))
+      .toMatchInlineSnapshot(`
       {
         "jobName": "app",
         "queueUrl": "https://jenkins.example.com/queue/item/42/",
@@ -622,9 +644,8 @@ describe("trigger", () => {
   })
 
   it("refuses to leave parameters to Jenkins' defaults", async () => {
-    expect(
-      await failure(call("jenkins_trigger_build", { jobName: "deploy" })),
-    ).toMatchInlineSnapshot(`
+    expect(await failure(call("jenkins_trigger_build", { jobName: "deploy" })))
+      .toMatchInlineSnapshot(`
       {
         "code": "PARAMETERS_REQUIRED",
         "message": "Job deploy has parameters that were not passed: ENV (ChoiceParameterDefinition, default dev), DRY_RUN (BooleanParameterDefinition, default true). Pass them in params, or set useDefaults: true to let Jenkins fill them.",
@@ -681,9 +702,8 @@ describe("trigger", () => {
   })
 
   it("names a missing job", async () => {
-    expect(
-      await failure(call("jenkins_trigger_build", { jobName: "nope" })),
-    ).toMatchInlineSnapshot(`
+    expect(await failure(call("jenkins_trigger_build", { jobName: "nope" })))
+      .toMatchInlineSnapshot(`
       {
         "code": "JOB_NOT_FOUND",
         "message": "Job not found: nope",
@@ -715,17 +735,15 @@ describe("instance", () => {
   })
 
   it("names a missing node or view", async () => {
-    expect(
-      await failure(call("jenkins_get_node", { nodeName: "ghost" })),
-    ).toMatchInlineSnapshot(`
+    expect(await failure(call("jenkins_get_node", { nodeName: "ghost" })))
+      .toMatchInlineSnapshot(`
       {
         "code": "NODE_NOT_FOUND",
         "message": "Node not found: ghost",
       }
     `)
-    expect(
-      await failure(call("jenkins_get_view", { viewName: "ghost" })),
-    ).toMatchInlineSnapshot(`
+    expect(await failure(call("jenkins_get_view", { viewName: "ghost" })))
+      .toMatchInlineSnapshot(`
       {
         "code": "VIEW_NOT_FOUND",
         "message": "View not found: ghost",

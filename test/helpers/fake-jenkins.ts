@@ -444,6 +444,7 @@ export const installFakeJenkins = (
         fullName: job.segments.join("/"),
         builds: (job.builds ?? []).map((b) => buildRecord(job, b)),
         lastBuild: job.builds?.[0] ? { number: job.builds[0].number } : null,
+        nextBuildNumber: (job.builds?.[0]?.number ?? 0) + 1,
         property: job.parameters
           ? [
               {
@@ -515,8 +516,10 @@ export const installFakeJenkins = (
         : notFound()
     }
     if (sub === "stop" || sub === "doDelete") return text("")
-    if (sub === "replay/rebuild")
-      return text("", 201, { location: `${BASE_URL}/queue/item/43/` })
+    // Jenkins schedules a replay and redirects to the job page, never to a
+    // queue item; `run` reads mainScript from the Stapler `json` field.
+    if (sub === "replay/rebuild" || sub === "replay/run")
+      return text("", 302, { location: "../.." })
     return notFound()
   }
 
