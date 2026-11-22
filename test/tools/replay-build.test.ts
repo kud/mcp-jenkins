@@ -22,6 +22,7 @@ describe("replayBuild tool", () => {
     const result = await replayBuild(mockClient, {
       jobName: "my-pipeline",
       buildNumber: 42,
+      confirm: true,
     })
 
     expect(mockClient.replayBuild).toHaveBeenCalledWith(
@@ -45,6 +46,7 @@ describe("replayBuild tool", () => {
     const result = await replayBuild(mockClient, {
       jobName: "my-pipeline",
       buildNumber: 7,
+      confirm: true,
       mainScript: script,
     })
 
@@ -66,11 +68,10 @@ describe("replayBuild tool", () => {
     const result = await replayBuild(mockClient, {
       jobName: "my-pipeline",
       buildNumber: 1,
+      confirm: true,
     })
 
-    expect(result.queueUrl).toBe(
-      "https://jenkins.example.com/queue/item/123/",
-    )
+    expect(result.queueUrl).toBe("https://jenkins.example.com/queue/item/123/")
   })
 
   it("should propagate a missing Location header error from the client", async () => {
@@ -81,7 +82,11 @@ describe("replayBuild tool", () => {
     )
 
     await expect(
-      replayBuild(mockClient, { jobName: "my-pipeline", buildNumber: 1 }),
+      replayBuild(mockClient, {
+        jobName: "my-pipeline",
+        buildNumber: 1,
+        confirm: true,
+      }),
     ).rejects.toThrow("without a queue Location header")
   })
 
@@ -91,7 +96,11 @@ describe("replayBuild tool", () => {
     )
 
     await expect(
-      replayBuild(mockClient, { jobName: "missing-pipeline", buildNumber: 3 }),
+      replayBuild(mockClient, {
+        jobName: "missing-pipeline",
+        buildNumber: 3,
+        confirm: true,
+      }),
     ).rejects.toThrow("Job not found: missing-pipeline")
   })
 })

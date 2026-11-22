@@ -306,7 +306,7 @@ export const rawTools: Tool[] = [
   },
   {
     name: "jenkins_delete_build",
-    description: "Delete a specific build",
+    description: "Permanently delete a specific build (requires confirm: true)",
     inputSchema: {
       type: "object",
       properties: {
@@ -318,8 +318,13 @@ export const rawTools: Tool[] = [
           type: "number",
           description: "Build number to delete",
         },
+        confirm: {
+          type: "boolean",
+          description: "Must be true to proceed",
+          default: false,
+        },
       },
-      required: ["jobName", "buildNumber"],
+      required: ["jobName", "buildNumber", "confirm"],
     },
     annotations: DESTRUCT,
   },
@@ -424,7 +429,7 @@ export const rawTools: Tool[] = [
   {
     name: "jenkins_replay_build",
     description:
-      "Replay/rerun a pipeline build, optionally with a modified pipeline script",
+      "Replay/rerun a pipeline build, optionally with a modified pipeline script (requires confirm: true)",
     inputSchema: {
       type: "object",
       properties: {
@@ -441,8 +446,13 @@ export const rawTools: Tool[] = [
           description:
             "Optional Groovy pipeline script to use instead of the original. When omitted, the original build script is replayed unchanged.",
         },
+        confirm: {
+          type: "boolean",
+          description: "Must be true to proceed",
+          default: false,
+        },
       },
-      required: ["jobName", "buildNumber"],
+      required: ["jobName", "buildNumber", "confirm"],
     },
     annotations: WRITE,
   },
@@ -503,7 +513,8 @@ export const rawTools: Tool[] = [
   },
   {
     name: "jenkins_delete_job",
-    description: "Permanently delete a job (WARNING: cannot be undone)",
+    description:
+      "Permanently delete a job (WARNING: cannot be undone; requires confirm: true)",
     inputSchema: {
       type: "object",
       properties: {
@@ -511,8 +522,13 @@ export const rawTools: Tool[] = [
           type: "string",
           description: "Name of the Jenkins job",
         },
+        confirm: {
+          type: "boolean",
+          description: "Must be true to proceed",
+          default: false,
+        },
       },
-      required: ["jobName"],
+      required: ["jobName", "confirm"],
     },
     annotations: DESTRUCT,
   },
@@ -593,7 +609,8 @@ export const rawTools: Tool[] = [
   },
   {
     name: "jenkins_update_job_config",
-    description: "Update an existing job's XML configuration",
+    description:
+      "Replace an existing job's XML configuration (requires confirm: true)",
     inputSchema: {
       type: "object",
       properties: {
@@ -602,8 +619,13 @@ export const rawTools: Tool[] = [
           type: "string",
           description: "New Jenkins job XML configuration",
         },
+        confirm: {
+          type: "boolean",
+          description: "Must be true to proceed",
+          default: false,
+        },
       },
-      required: ["jobName", "configXml"],
+      required: ["jobName", "configXml", "confirm"],
     },
     annotations: DESTRUCT,
   },

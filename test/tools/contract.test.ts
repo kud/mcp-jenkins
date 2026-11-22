@@ -166,8 +166,11 @@ describe("jobs", () => {
   it.each([
     ["jenkins_enable_job", { jobName: "app" }],
     ["jenkins_disable_job", { jobName: "app" }],
-    ["jenkins_delete_job", { jobName: "app" }],
-    ["jenkins_update_job_config", { jobName: "app", configXml: "<project/>" }],
+    ["jenkins_delete_job", { jobName: "app", confirm: true }],
+    [
+      "jenkins_update_job_config",
+      { jobName: "app", configXml: "<project/>", confirm: true },
+    ],
     ["jenkins_rename_job", { jobName: "app", newName: "app2" }],
     ["jenkins_create_job", { jobName: "Team/new", configXml: "<project/>" }],
     ["jenkins_copy_job", { fromName: "app", newName: "Team/copy" }],
@@ -421,14 +424,18 @@ describe("builds", () => {
 
   it.each([
     ["jenkins_stop_build", { jobName: "app", buildNumber: 1 }],
-    ["jenkins_delete_build", { jobName: "app", buildNumber: 2 }],
+    ["jenkins_delete_build", { jobName: "app", buildNumber: 2, confirm: true }],
   ])("%s", async (tool, input) => {
     expect(await call(tool, input)).toMatchSnapshot()
   })
 
   it("jenkins_replay_build treats Jenkins' 302 to the job page as success", async () => {
     expect(
-      await call("jenkins_replay_build", { jobName: "app", buildNumber: 3 }),
+      await call("jenkins_replay_build", {
+        jobName: "app",
+        buildNumber: 3,
+        confirm: true,
+      }),
     ).toMatchInlineSnapshot(`
       {
         "buildNumber": 3,
@@ -444,6 +451,7 @@ describe("builds", () => {
     const script =
       'pipeline { agent any; stages { stage("x") { steps { echo "replayed" } } } }'
     await call("jenkins_replay_build", {
+      confirm: true,
       jobName: "app",
       buildNumber: 3,
       mainScript: script,

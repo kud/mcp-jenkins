@@ -9,12 +9,14 @@ describe("loadToolFilter", () => {
   afterEach(() => {
     delete process.env["MCP_JENKINS_ALLOW_TOOLS"]
     delete process.env["MCP_JENKINS_BLOCK_TOOLS"]
+    delete process.env["MCP_JENKINS_ALLOW_WRITE"]
   })
 
   it("returns null allowlist and empty blocklist when no env vars set", () => {
     const filter = loadToolFilter()
     expect(filter.allowlist).toBeNull()
     expect(filter.blocklist).toEqual([])
+    expect(filter.allowWrite).toBe(false)
   })
 
   it("parses MCP_JENKINS_ALLOW_TOOLS into allowlist", () => {

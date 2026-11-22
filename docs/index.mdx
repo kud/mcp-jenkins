@@ -10,7 +10,7 @@ CI/CD workflows, with native integration for Claude Desktop and the Claude Code 
 
 - **🔐 Flexible Authentication** - Bearer tokens, Basic auth, OAuth support
 - **⚙️ Flexible Configuration** - CLI args or `MCP_JENKINS_*` env vars (priority-based)
-- **🔒 Tool Filtering** - Allowlist or blocklist tools via `MCP_JENKINS_ALLOW_TOOLS` / `MCP_JENKINS_BLOCK_TOOLS`
+- **🔒 Read-only by Default** - Write tools need `MCP_JENKINS_ALLOW_WRITE=1`; allowlist or blocklist tools via `MCP_JENKINS_ALLOW_TOOLS` / `MCP_JENKINS_BLOCK_TOOLS`
 - **🔀 Multi-Instance Support** - Connect to multiple Jenkins servers in one MCP entry, select per tool call
 - **🛠️ 39 Tools** - Comprehensive Jenkins API coverage
 - **⚡ Modern Stack** - TypeScript 5.3+, ES2023, Native Fetch API

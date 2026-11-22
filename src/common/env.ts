@@ -200,7 +200,12 @@ export const getInstanceNames = (): string[] => {
 export interface ToolFilter {
   allowlist: string[] | null
   blocklist: string[]
+  // Write tools (every tool not annotated readOnlyHint: true) are exposed only
+  // when this is true, or when the allowlist names them one by one.
+  allowWrite: boolean
 }
+
+const TRUTHY = new Set(["1", "true", "yes", "on"])
 
 /**
  * Load tool allow/block lists from environment variables.
@@ -212,13 +217,19 @@ export interface ToolFilter {
  *   MCP_JENKINS_BLOCK_TOOLS=jenkins_delete_job,jenkins_trigger_build
  *
  * If both are set, allowlist takes precedence and blocklist is ignored.
+ *
+ * Write tools are off by default (read-only). They are exposed with
+ *   MCP_JENKINS_ALLOW_WRITE=1
+ * or individually, by naming each one in MCP_JENKINS_ALLOW_TOOLS.
  */
 export const loadToolFilter = (): ToolFilter => {
   const rawAllow = process.env["MCP_JENKINS_ALLOW_TOOLS"]
   const rawBlock = process.env["MCP_JENKINS_BLOCK_TOOLS"]
+  const rawWrite = process.env["MCP_JENKINS_ALLOW_WRITE"]
 
   return {
     allowlist: rawAllow ? splitValues(rawAllow) : null,
     blocklist: rawBlock ? splitValues(rawBlock) : [],
+    allowWrite: TRUTHY.has((rawWrite ?? "").trim().toLowerCase()),
   }
 }
