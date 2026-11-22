@@ -39,6 +39,7 @@ const injectInstance = (tool: Tool): Tool => ({
 
 import { rawTools } from "./tool-manifest.js"
 import { toolHandlers } from "./tool-handlers.js"
+import { selectTools } from "./tool-filter.js"
 
 const { allowlist, blocklist } = loadToolFilter()
 
@@ -48,11 +49,8 @@ if (allowlist && blocklist.length) {
   )
 }
 
-const filteredRawTools = allowlist
-  ? rawTools.filter((t) => allowlist.includes(t.name))
-  : blocklist.length
-    ? rawTools.filter((t) => !blocklist.includes(t.name))
-    : rawTools
+const filteredRawTools = selectTools(rawTools, { allowlist, blocklist })
+const exposedToolNames = new Set(filteredRawTools.map((t) => t.name))
 
 if (allowlist) {
   logger.info("Tool allowlist active", { tools: allowlist })
@@ -235,6 +233,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
 
   try {
+    // The allow/block lists gate calls, not only the advertised list.
+    if (!exposedToolNames.has(name)) {
+      throw new McpError("TOOL_NOT_FOUND", `Unknown tool: ${name}`, 404)
+    }
+
     if (name === "jenkins_list_instances") {
       return {
         content: [
