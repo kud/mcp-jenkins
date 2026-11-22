@@ -1,0 +1,55 @@
+name: Dependabot auto-merge
+
+on:
+  workflow_run:
+    workflows: ["*"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge a green minor or patch update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          # The open PR whose head is exactly this commit, opened by Dependabot.
+          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" | jq -r --arg sha "$SHA" --arg repo "$REPO" '
+            [ .[] | select(.state == "open" and .head.sha == $sha and .head.repo.full_name == $repo
+                           and .user.login == "dependabot[bot]" and (.head.ref | startswith("dependabot/"))) ]
+            | .[0].number // empty')
+          if [ -z "$pr" ]; then echo "::notice::No open Dependabot PR at $SHA."; exit 0; fi
+
+          # Every check run on the head commit finished green; this run's own suite is excluded.
+          own_suite=$(gh api "repos/$REPO/actions/runs/$GITHUB_RUN_ID" --jq .check_suite_id)
+          runs=$(gh api --paginate "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+                   --jq '.check_runs[] | {name, status, conclusion, suite: .check_suite.id}' \
+                 | jq -s --argjson own "$own_suite" '[ .[] | select(.suite != $own) ]')
+          if [ "$(jq 'length' <<< "$runs")" -eq 0 ]; then echo "::notice::No check run on $SHA; not merging."; exit 0; fi
+          pending=$(jq -r '.[] | select(.status != "completed" or (.conclusion as $c | ["success", "skipped", "neutral"] | index($c) | not))
+                           | "\(.name): \(.status)/\(.conclusion)"' <<< "$runs")
+          if [ -n "$pending" ]; then printf '::notice::Not every check is green yet:\n%s\n' "$pending"; exit 0; fi
+
+          # No semver-major update anywhere in the PR, read from Dependabot's commit metadata.
+          msg=$(gh api "repos/$REPO/commits/$SHA" --jq .commit.message)
+          if ! grep -qE 'update-type:[[:space:]]*version-update:semver-(minor|patch)' <<< "$msg"; then echo "::notice::No minor or patch metadata in $SHA; not merging."; exit 0; fi
+          if grep -qE 'update-type:[[:space:]]*version-update:semver-major' <<< "$msg"; then echo "::notice::A semver-major update is in #$pr; left for a human."; exit 0; fi
+
+          gh api -X PUT "repos/$REPO/pulls/$pr/merge" -f sha="$SHA" -f merge_method=squash
