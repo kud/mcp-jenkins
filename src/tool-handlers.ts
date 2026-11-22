@@ -1,5 +1,7 @@
 import { JenkinsClient } from "./lib/client.js"
 import { toMcpError } from "./lib/errors.js"
+import { rawTools } from "./tool-manifest.js"
+import { validateToolInput } from "./tool-input.js"
 import { getJobStatus } from "./tools/get-job-status.js"
 import { getJobParameters } from "./tools/get-job-parameters.js"
 import { getBuildStatus } from "./tools/get-build-status.js"
@@ -82,17 +84,26 @@ const handlers: Record<string, ToolHandler> = {
   jenkins_safe_restart: safeRestart,
 }
 
+const schemas = new Map(rawTools.map((tool) => [tool.name, tool]))
+
 // Every handler shares one error vocabulary: an expired credential or a
-// deadline reads the same whichever endpoint hit it.
+// deadline reads the same whichever endpoint hit it. Every call is checked
+// against the tool's inputSchema first (see tool-input.ts): nothing reaches a
+// handler, and so Jenkins, with arguments its schema does not allow.
 export const toolHandlers: Record<string, ToolHandler> = Object.fromEntries(
-  Object.entries(handlers).map(([name, handler]) => [
-    name,
-    async (client: JenkinsClient, input: any) => {
-      try {
-        return await handler(client, input)
-      } catch (err) {
-        throw toMcpError(err)
-      }
-    },
-  ]),
+  Object.entries(handlers).map(([name, handler]) => {
+    const schema = schemas.get(name)
+    if (!schema) throw new Error(`Tool ${name} has a handler but no schema`)
+    return [
+      name,
+      async (client: JenkinsClient, input: any) => {
+        const args = validateToolInput(schema, input)
+        try {
+          return await handler(client, args)
+        } catch (err) {
+          throw toMcpError(err)
+        }
+      },
+    ]
+  }),
 )

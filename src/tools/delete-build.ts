@@ -2,6 +2,7 @@ import { JenkinsClient } from "../lib/client.js"
 import { Errors } from "../common/index.js"
 import { statusOf } from "../lib/errors.js"
 import { buildNotFoundError } from "../lib/builds.js"
+import { checkJobName, parseBuildNumber } from "../tool-input.js"
 
 export interface DeleteBuildInput {
   jobName: string
@@ -12,7 +13,10 @@ export const deleteBuild = async (
   client: JenkinsClient,
   input: DeleteBuildInput,
 ) => {
-  const { jobName, buildNumber } = input
+  // Checked here too, not only at dispatch: these values are interpolated
+  // into the URL the core client calls.
+  const jobName = checkJobName(input.jobName)
+  const buildNumber = parseBuildNumber(input.buildNumber) as number
   try {
     await client.deleteBuild(jobName, buildNumber)
   } catch (err) {

@@ -2,6 +2,11 @@ import { JenkinsClient } from "../lib/client.js"
 import { Errors } from "../common/index.js"
 import { isNotFound } from "../lib/errors.js"
 import { subResource404Error } from "../lib/builds.js"
+import {
+  checkArtifactPath,
+  checkJobName,
+  parseBuildNumber,
+} from "../tool-input.js"
 
 export interface GetArtifactInput {
   jobName: string
@@ -13,7 +18,11 @@ export const getArtifact = async (
   client: JenkinsClient,
   input: GetArtifactInput,
 ) => {
-  const { jobName, buildNumber, relativePath } = input
+  // Checked here too, not only at dispatch: these values are interpolated
+  // into the URL the core client calls, the artifact path unencoded.
+  const jobName = checkJobName(input.jobName)
+  const buildNumber = parseBuildNumber(input.buildNumber) as number
+  const relativePath = checkArtifactPath(input.relativePath)
   try {
     const buf = await client.downloadArtifact(jobName, buildNumber, relativePath)
     return {
