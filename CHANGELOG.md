@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 
 ---
 
+## [Unreleased]
+
+### 💥 Breaking Changes
+
+- The server is now read-only by default. Tools that change Jenkins (trigger, stop, delete, replay, create, configure, rename, copy, enable/disable, cancel queue items, node offline, quiet down, restart) are hidden and refused unless `MCP_JENKINS_ALLOW_WRITE=1` is set, or the tool is named in `MCP_JENKINS_ALLOW_TOOLS`. Logs and reports the model reads can carry injected instructions; writes now need an explicit opt-in. To keep the previous behaviour, set `MCP_JENKINS_ALLOW_WRITE=1`.
+- `jenkins_delete_job`, `jenkins_delete_build`, `jenkins_update_job_config` and `jenkins_replay_build` now refuse to run without `confirm: true`, like `jenkins_quiet_down` and `jenkins_safe_restart` already did.
+
+---
+
 ## [4.0.0] — 2026-11-10
 
 ### 💥 Breaking Changes

@@ -10,15 +10,16 @@ const names = (filter: Parameters<typeof selectTools>[1]) =>
 
 describe("selectTools", () => {
   it("exposes every tool with no filter", () => {
-    expect(names({ allowlist: null, blocklist: [] })).toHaveLength(
-      rawTools.length,
-    )
+    expect(
+      names({ allowlist: null, blocklist: [], allowWrite: true }),
+    ).toHaveLength(rawTools.length)
   })
 
   it("drops blocked tools", () => {
     const exposed = names({
       allowlist: null,
       blocklist: ["jenkins_delete_job"],
+      allowWrite: true,
     })
     expect(exposed).not.toContain("jenkins_delete_job")
     expect(exposed).toContain("jenkins_list_jobs")
@@ -29,6 +30,7 @@ describe("selectTools", () => {
       names({
         allowlist: ["jenkins_list_jobs"],
         blocklist: ["jenkins_list_jobs"],
+        allowWrite: false,
       }),
     ).toEqual(["jenkins_list_jobs"])
   })
@@ -50,6 +52,7 @@ describe("tools/call honours the filter", () => {
         PATH: process.env.PATH ?? "",
         MCP_JENKINS_URL: "https://jenkins.invalid",
         MCP_JENKINS_BEARER_TOKEN: "x",
+        MCP_JENKINS_ALLOW_WRITE: "1",
         MCP_JENKINS_BLOCK_TOOLS: "jenkins_delete_job",
       },
       stderr: "ignore",

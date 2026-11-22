@@ -72,6 +72,7 @@ describe("build numbers are whole numbers or permalinks", () => {
             jobName: "app",
             buildNumber,
             relativePath: "dist/app.jar",
+            confirm: true,
           }),
         )
         expect(err.code).toBe("INVALID_INPUT")
@@ -146,7 +147,11 @@ describe("names that become URL segments", () => {
   it("refuses dot segments in a job name", async () => {
     for (const jobName of ["..", "a/../../b", "a/./b"]) {
       const err = await rejection(
-        call("jenkins_delete_build", { jobName, buildNumber: 1 }),
+        call("jenkins_delete_build", {
+          jobName,
+          buildNumber: 1,
+          confirm: true,
+        }),
       )
       expect(err.message).toContain("jobName")
     }
@@ -157,6 +162,7 @@ describe("names that become URL segments", () => {
     await call("jenkins_delete_build", {
       jobName: "repo/feature/x",
       buildNumber: 3,
+      confirm: true,
     })
     expect(client.deleteBuild).toHaveBeenCalledWith("repo/feature/x", 3)
   })
@@ -180,9 +186,7 @@ describe("names that become URL segments", () => {
 
 describe("schema types and required properties", () => {
   it("refuses a string where the confirm gate expects a boolean", async () => {
-    const err = await rejection(
-      call("jenkins_quiet_down", { confirm: "true" }),
-    )
+    const err = await rejection(call("jenkins_quiet_down", { confirm: "true" }))
     expect(err.message).toContain("confirm must be of type boolean")
     noClientCalls()
   })
@@ -204,6 +208,7 @@ describe("schema types and required properties", () => {
       jobName: "app",
       buildNumber: 4,
       mainScript: null,
+      confirm: true,
     })
     expect(client.replayBuild).toHaveBeenCalledWith("app", 4, undefined)
   })
@@ -221,6 +226,7 @@ describe("tool functions check their own URL inputs", () => {
     jobName: "app",
     buildNumber: "7/../../victim/doDelete?x=" as unknown as number,
     relativePath: "x",
+    confirm: true,
   }
 
   it("for direct callers that bypass dispatch", async () => {

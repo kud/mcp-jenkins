@@ -1,4 +1,5 @@
 import { JenkinsClient } from "../lib/client.js"
+import { requireConfirm } from "../lib/confirm.js"
 import { Errors } from "../common/index.js"
 import { statusOf } from "../lib/errors.js"
 import { buildNotFoundError } from "../lib/builds.js"
@@ -8,12 +9,14 @@ export interface ReplayBuildInput {
   jobName: string
   buildNumber: number
   mainScript?: string
+  confirm?: boolean
 }
 
 export const replayBuild = async (
   client: JenkinsClient,
   input: ReplayBuildInput,
 ) => {
+  requireConfirm(input, `replay build ${input.buildNumber} of ${input.jobName}`)
   // Checked here too, not only at dispatch: these values are interpolated
   // into the URL the core client calls.
   const jobName = checkJobName(input.jobName)

@@ -84,6 +84,36 @@ One value applies to every configured instance. To find out what your instance a
 time curl -u user:token 'https://pipeline.yourcompany.com/job/my-job/api/json'
 ```
 
+### Read-only by default
+
+Out of the box the server exposes only tools that read Jenkins. The tools that change it (trigger, stop, delete, replay, create, configure, rename, copy, enable/disable, cancel queue items, take nodes offline, quiet down, restart) are hidden from the tool list and refused if called by name.
+
+Console logs, test reports and job descriptions are text that anyone able to influence a build can write, and the model reads that text. Keeping writes off means a single injected instruction cannot, for example, replay a build with a new pipeline script.
+
+To expose every write tool:
+
+```json
+"env": {
+  "MCP_JENKINS_URL": "https://pipeline.yourcompany.com",
+  "MCP_JENKINS_BEARER_TOKEN": "your_bearer_token",
+  "MCP_JENKINS_ALLOW_WRITE": "1"
+}
+```
+
+To expose only some, name them in `MCP_JENKINS_ALLOW_TOOLS`: a write tool named there explicitly is exposed even without `MCP_JENKINS_ALLOW_WRITE`. With writes on, `MCP_JENKINS_BLOCK_TOOLS` hides individual tools again.
+
+Four irreversible tools also refuse to run unless the call passes `confirm: true`: `jenkins_delete_job`, `jenkins_delete_build`, `jenkins_update_job_config` and `jenkins_replay_build`.
+
+#### Migrating from 4.x
+
+Until now every tool was exposed unless blocked. If you rely on write tools:
+
+- set `MCP_JENKINS_ALLOW_WRITE=1` to keep them all, then drop from `MCP_JENKINS_BLOCK_TOOLS` anything that only served to make the server read-only;
+- or list exactly the tools you need in `MCP_JENKINS_ALLOW_TOOLS`; an existing allowlist keeps working unchanged;
+- calls to the four irreversible tools must now pass `confirm: true`.
+
+A setup that blocked every write tool with `MCP_JENKINS_BLOCK_TOOLS` is now the default and can drop that variable.
+
 ### Environment variables
 
 | Variable                   | Description                                                                       | Default          |
@@ -95,8 +125,9 @@ time curl -u user:token 'https://pipeline.yourcompany.com/job/my-job/api/json'
 | `MCP_JENKINS_ANONYMOUS`    | `true` for a Jenkins instance that needs no authentication.                       | `false`          |
 | `MCP_JENKINS_TIMEOUT_MS`   | Per-request deadline in milliseconds, applied to every instance.                  | `30000`          |
 | `MCP_JENKINS_INSTANCES`    | Comma-separated instance names, pairing each name with a URL position.            | Hostname per URL |
-| `MCP_JENKINS_ALLOW_TOOLS`  | Comma-separated tool names: expose only these tools.                              | All tools        |
-| `MCP_JENKINS_BLOCK_TOOLS`  | Comma-separated tool names: hide these tools (ignored when the allowlist is set). | All tools        |
+| `MCP_JENKINS_ALLOW_WRITE`  | `1` (or `true`, `yes`, `on`) to expose the tools that change Jenkins.             | Read-only        |
+| `MCP_JENKINS_ALLOW_TOOLS`  | Comma-separated tool names: expose only these tools, write tools included.        | All read tools   |
+| `MCP_JENKINS_BLOCK_TOOLS`  | Comma-separated tool names: hide these tools (ignored when the allowlist is set). | None             |
 
 ### Tools
 

@@ -79,25 +79,28 @@ The first instance is always the default — tools work without `instance` if yo
 
 Control which tools are exposed to the AI using an allowlist or blocklist.
 
-**Allowlist** — expose only specific tools:
+**Read-only by default.** Only tools that read Jenkins are exposed. Tools that change it are hidden and refused by name unless writes are enabled:
+
+```bash
+export MCP_JENKINS_ALLOW_WRITE=1
+```
+
+`jenkins_delete_job`, `jenkins_delete_build`, `jenkins_update_job_config` and `jenkins_replay_build` also refuse to run without `confirm: true`.
+
+**Allowlist** — expose only specific tools (a write tool named here is exposed even without `MCP_JENKINS_ALLOW_WRITE`):
 
 ```bash
 export MCP_JENKINS_ALLOW_TOOLS="jenkins_list_jobs,jenkins_get_job_status,jenkins_get_build_status"
 ```
 
-**Blocklist** — hide specific tools (all others remain available):
+**Blocklist** — hide specific tools from what would otherwise be exposed (it never adds a tool):
 
 ```bash
-export MCP_JENKINS_BLOCK_TOOLS="jenkins_delete_job,jenkins_trigger_build,jenkins_safe_restart"
+export MCP_JENKINS_ALLOW_WRITE=1
+export MCP_JENKINS_BLOCK_TOOLS="jenkins_delete_job,jenkins_safe_restart"
 ```
 
-If both are set, `MCP_JENKINS_ALLOW_TOOLS` takes precedence.
-
-**Read-only monitoring preset** — block all write/destructive tools:
-
-```bash
-export MCP_JENKINS_BLOCK_TOOLS="jenkins_trigger_build,jenkins_stop_build,jenkins_delete_build,jenkins_cancel_queue,jenkins_enable_job,jenkins_disable_job,jenkins_delete_job,jenkins_create_job,jenkins_update_job_config,jenkins_rename_job,jenkins_copy_job,jenkins_toggle_node_offline,jenkins_quiet_down,jenkins_cancel_quiet_down,jenkins_safe_restart,jenkins_replay_build"
-```
+If both lists are set, `MCP_JENKINS_ALLOW_TOOLS` takes precedence.
 
 ## 💡 Examples
 

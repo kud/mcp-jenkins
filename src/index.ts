@@ -41,7 +41,7 @@ import { rawTools } from "./tool-manifest.js"
 import { toolHandlers } from "./tool-handlers.js"
 import { selectTools } from "./tool-filter.js"
 
-const { allowlist, blocklist } = loadToolFilter()
+const { allowlist, blocklist, allowWrite } = loadToolFilter()
 
 if (allowlist && blocklist.length) {
   logger.warn(
@@ -49,13 +49,23 @@ if (allowlist && blocklist.length) {
   )
 }
 
-const filteredRawTools = selectTools(rawTools, { allowlist, blocklist })
+const filteredRawTools = selectTools(rawTools, {
+  allowlist,
+  blocklist,
+  allowWrite,
+})
 const exposedToolNames = new Set(filteredRawTools.map((t) => t.name))
 
 if (allowlist) {
   logger.info("Tool allowlist active", { tools: allowlist })
 } else if (blocklist.length) {
   logger.info("Tool blocklist active", { blocked: blocklist })
+}
+
+if (!allowWrite && !allowlist) {
+  logger.info(
+    "Read-only mode: write tools are hidden. Set MCP_JENKINS_ALLOW_WRITE=1 to expose them",
+  )
 }
 
 const tools = filteredRawTools.map(injectInstance)
@@ -134,8 +144,16 @@ Slow Jenkins:
   "Jenkins request timed out" from this server rather than an error from Jenkins.
   Raise it with --timeout-ms 60000 or MCP_JENKINS_TIMEOUT_MS=60000.
 
+Read-only by default:
+  Only read tools are exposed unless writes are enabled. Write tools change
+  Jenkins (trigger, stop, delete, replay, configure, restart, ...).
+  MCP_JENKINS_ALLOW_WRITE=1                Expose every write tool
+  jenkins_delete_job, jenkins_delete_build, jenkins_update_job_config and
+  jenkins_replay_build also refuse to run without confirm: true.
+
 Tool Filtering (via environment variables):
   MCP_JENKINS_ALLOW_TOOLS=<tool1>,<tool2>  Allowlist — expose only these tools
+                                           (naming a write tool enables it)
   MCP_JENKINS_BLOCK_TOOLS=<tool1>,<tool2>  Blocklist — hide these tools
   If both are set, MCP_JENKINS_ALLOW_TOOLS takes precedence.
 
@@ -154,8 +172,13 @@ Examples:
   MCP_JENKINS_BEARER_TOKEN=abc123 \\
   mcp-jenkins
 
-  # Read-only monitoring (block all write tools)
-  MCP_JENKINS_BLOCK_TOOLS=jenkins_trigger_build,jenkins_stop_build,jenkins_delete_build,jenkins_cancel_queue,jenkins_enable_job,jenkins_disable_job,jenkins_delete_job,jenkins_create_job,jenkins_update_job_config,jenkins_rename_job,jenkins_copy_job,jenkins_toggle_node_offline,jenkins_quiet_down,jenkins_cancel_quiet_down,jenkins_safe_restart,jenkins_replay_build \\
+  # Enable write tools (read-only otherwise)
+  MCP_JENKINS_ALLOW_WRITE=1 \\
+  mcp-jenkins --url https://jenkins.example.com --bearer-token abc123
+
+  # Writes on, but never delete or reconfigure jobs
+  MCP_JENKINS_ALLOW_WRITE=1 \\
+  MCP_JENKINS_BLOCK_TOOLS=jenkins_delete_job,jenkins_update_job_config \\
   mcp-jenkins --url https://jenkins.example.com --bearer-token abc123
 
   # Slow instance: give every request 60 s instead of the 30 s default
