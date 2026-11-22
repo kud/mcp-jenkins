@@ -2,6 +2,7 @@ import { JenkinsClient } from "../lib/client.js"
 import { Errors } from "../common/index.js"
 import { statusOf } from "../lib/errors.js"
 import { buildNotFoundError } from "../lib/builds.js"
+import { checkJobName, parseBuildNumber } from "../tool-input.js"
 
 export interface ReplayBuildInput {
   jobName: string
@@ -13,7 +14,11 @@ export const replayBuild = async (
   client: JenkinsClient,
   input: ReplayBuildInput,
 ) => {
-  const { jobName, buildNumber, mainScript } = input
+  // Checked here too, not only at dispatch: these values are interpolated
+  // into the URL the core client calls.
+  const jobName = checkJobName(input.jobName)
+  const buildNumber = parseBuildNumber(input.buildNumber) as number
+  const { mainScript } = input
   try {
     return await client.replayBuild(jobName, buildNumber, mainScript)
   } catch (err) {
